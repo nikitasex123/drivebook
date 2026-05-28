@@ -170,8 +170,10 @@
             <strong>Кабинет инструктора</strong>
             <span class="current-instructor" id="currentInstructorName"></span>
           </div>
-          <nav class="view-switch instructor-switch" aria-label="Разделы кабинета">
+          <nav class="view-switch instructor-switch wide-switch" aria-label="Разделы кабинета">
             <button class="active" type="button" data-view="admin">Журнал</button>
+            <button type="button" data-view="calendar">Календарь</button>
+            <button type="button" data-view="analytics">Аналитика</button>
             <button type="button" data-view="settings">Настройки</button>
           </nav>
           <div class="header-actions">
@@ -193,7 +195,44 @@
           </div>
           <p class="form-note" id="adminNote" role="status"></p>
 
+          <section class="mini-panel" aria-labelledby="notification-title">
+            <div class="section-heading compact">
+              <div>
+                <p class="eyebrow">Уведомления</p>
+                <h3 id="notification-title">Ближайшие напоминания</h3>
+              </div>
+            </div>
+            <div class="notification-list" id="notificationList"></div>
+          </section>
+
           <div class="booking-list" id="bookingList"></div>
+        </section>
+
+        <section class="admin-panel" id="calendarView" aria-labelledby="calendar-title" hidden>
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">Календарь</p>
+              <h2 id="calendar-title">Неделя занятий</h2>
+            </div>
+            <div class="admin-actions">
+              <button id="prevWeek" type="button">Назад</button>
+              <button id="todayWeek" type="button">Сегодня</button>
+              <button id="nextWeek" type="button">Вперед</button>
+            </div>
+          </div>
+          <div class="calendar-week-label" id="calendarWeekLabel"></div>
+          <div class="calendar-grid" id="calendarGrid"></div>
+        </section>
+
+        <section class="admin-panel" id="analyticsView" aria-labelledby="analytics-title" hidden>
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">Аналитика</p>
+              <h2 id="analytics-title">Мини-отчет</h2>
+            </div>
+          </div>
+          <div class="analytics-cards" id="analyticsCards"></div>
+          <div class="analytics-bars" id="analyticsBars"></div>
         </section>
 
         <section class="admin-panel" id="settingsView" aria-labelledby="settings-title" hidden>
@@ -260,6 +299,75 @@
                 </select>
               </label>
             </div>
+
+            <div class="settings-grid">
+              <label>
+                Перерыв с
+                <input id="breakStart" name="breakStart" type="time" />
+              </label>
+
+              <label>
+                Перерыв до
+                <input id="breakEnd" name="breakEnd" type="time" />
+              </label>
+
+              <label>
+                Запись минимум за
+                <select id="minAdvanceHours" name="minAdvanceHours">
+                  <option value="0">без ограничения</option>
+                  <option value="2">2 часа</option>
+                  <option value="6">6 часов</option>
+                  <option value="12">12 часов</option>
+                  <option value="24">24 часа</option>
+                  <option value="48">48 часов</option>
+                </select>
+              </label>
+            </div>
+
+            <fieldset class="smart-settings">
+              <legend>Недоступные даты</legend>
+              <div class="settings-grid two-column">
+                <label>
+                  Дата
+                  <input id="blockedDate" name="blockedDate" type="date" />
+                </label>
+
+                <label>
+                  Причина
+                  <input id="blockedReason" name="blockedReason" placeholder="Выходной, отпуск, экзамен" />
+                </label>
+              </div>
+              <button id="addBlockedDate" type="button">Добавить дату</button>
+              <div class="blocked-date-list" id="blockedDateList"></div>
+            </fieldset>
+
+            <fieldset class="smart-settings">
+              <legend>Уведомления</legend>
+              <div class="notification-settings">
+                <label class="check-row">
+                  <input id="notifyEmail" name="notifyEmail" type="checkbox" />
+                  <span>Email ученику и инструктору</span>
+                </label>
+                <label class="check-row">
+                  <input id="notifyWhatsapp" name="notifyWhatsapp" type="checkbox" />
+                  <span>WhatsApp-напоминание</span>
+                </label>
+                <label class="check-row">
+                  <input id="notifyTelegram" name="notifyTelegram" type="checkbox" />
+                  <span>Telegram-напоминание</span>
+                </label>
+                <label>
+                  Напоминать за
+                  <select id="reminderHours" name="reminderHours">
+                    <option value="2">2 часа</option>
+                    <option value="6">6 часов</option>
+                    <option value="12">12 часов</option>
+                    <option value="24">24 часа</option>
+                    <option value="48">48 часов</option>
+                  </select>
+                </label>
+              </div>
+            </fieldset>
 
             <div class="settings-summary" id="settingsSummary"></div>
 

@@ -93,6 +93,11 @@ button {
   font-weight: 800;
 }
 
+.wide-switch {
+  grid-template-columns: repeat(4, 1fr);
+  min-width: min(520px, 100%);
+}
+
 .view-switch button.active {
   background: var(--accent);
   color: #fff;
@@ -599,6 +604,19 @@ textarea:focus {
   gap: 10px;
 }
 
+.mini-panel {
+  margin-bottom: 18px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 18px;
+  background: var(--surface-strong);
+}
+
+.mini-panel h3 {
+  margin: 0;
+  font-size: 1.05rem;
+}
+
 .empty-state {
   margin: 0;
   border: 1px dashed var(--line);
@@ -606,6 +624,57 @@ textarea:focus {
   padding: 18px;
   color: var(--muted);
   background: var(--surface-strong);
+}
+
+.compact-empty {
+  padding: 12px;
+  background: #fff;
+}
+
+.notification-list,
+.blocked-date-list {
+  display: grid;
+  gap: 8px;
+}
+
+.notification-item,
+.blocked-date-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px;
+  background: #fff;
+}
+
+.notification-item {
+  display: grid;
+  justify-content: stretch;
+}
+
+.notification-item strong,
+.notification-item span,
+.blocked-date-item span {
+  min-width: 0;
+}
+
+.notification-item span {
+  color: var(--muted);
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
+.blocked-date-item button,
+.smart-settings > button {
+  min-height: 38px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0 12px;
+  background: #fff;
+  color: var(--ink);
+  font-weight: 800;
 }
 
 .booking-card {
@@ -678,6 +747,154 @@ textarea:focus {
 
 .settings-form {
   max-width: 860px;
+}
+
+.smart-settings {
+  display: grid;
+  gap: 12px;
+}
+
+.notification-settings {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(220px, 1fr));
+  gap: 14px;
+}
+
+.calendar-week-label {
+  margin: -8px 0 18px;
+  color: var(--muted);
+  font-weight: 800;
+}
+
+.calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(150px, 1fr));
+  gap: 10px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+
+.calendar-day {
+  min-width: 150px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-strong);
+  overflow: hidden;
+}
+
+.calendar-day-head {
+  min-height: 74px;
+  padding: 12px;
+  border-bottom: 1px solid var(--line);
+  background: #fff;
+}
+
+.calendar-day-head strong,
+.calendar-day-head span {
+  display: block;
+}
+
+.calendar-day-head span {
+  margin-top: 5px;
+  color: var(--muted);
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
+.calendar-bookings {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+}
+
+.calendar-booking {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px;
+  background: #fff;
+  color: var(--ink);
+  text-align: left;
+}
+
+.calendar-booking:hover {
+  border-color: var(--accent);
+}
+
+.calendar-booking strong,
+.calendar-booking span {
+  display: block;
+}
+
+.calendar-booking span,
+.calendar-empty {
+  color: var(--muted);
+  font-size: 0.85rem;
+  line-height: 1.35;
+}
+
+.calendar-empty {
+  margin: 0;
+}
+
+.analytics-cards {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(130px, 1fr));
+  gap: 10px;
+  margin-bottom: 20px;
+}
+
+.analytics-card {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 16px;
+  background: #fff;
+}
+
+.analytics-card span,
+.analytics-card strong {
+  display: block;
+}
+
+.analytics-card span {
+  color: var(--muted);
+  font-size: 0.85rem;
+  font-weight: 800;
+}
+
+.analytics-card strong {
+  margin-top: 8px;
+  color: var(--accent-dark);
+  font-size: 1.55rem;
+  line-height: 1;
+}
+
+.analytics-bars {
+  display: grid;
+  gap: 10px;
+  max-width: 760px;
+}
+
+.analytics-bar-row {
+  display: grid;
+  grid-template-columns: 80px minmax(140px, 1fr) 34px;
+  align-items: center;
+  gap: 10px;
+  color: var(--muted);
+  font-weight: 800;
+}
+
+.analytics-track {
+  height: 12px;
+  border-radius: 999px;
+  background: var(--surface-strong);
+  overflow: hidden;
+}
+
+.analytics-track i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
 }
 
 .drawer-backdrop {
@@ -917,6 +1134,10 @@ textarea:focus {
     width: 100%;
   }
 
+  .wide-switch {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
   .role-actions {
     grid-template-columns: 1fr;
     padding: 18px;
@@ -931,8 +1152,14 @@ textarea:focus {
   .slot-grid,
   .weekday-grid,
   .settings-grid,
-  .settings-grid.two-column {
+  .settings-grid.two-column,
+  .notification-settings,
+  .analytics-cards {
     grid-template-columns: 1fr 1fr;
+  }
+
+  .calendar-grid {
+    grid-template-columns: repeat(7, minmax(150px, 1fr));
   }
 
   .drawer-backdrop {

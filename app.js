@@ -10,6 +10,16 @@ const DEFAULT_SETTINGS = {
   startTime: "09:00",
   endTime: "18:00",
   lessonDuration: 60,
+  breakStart: "",
+  breakEnd: "",
+  minAdvanceHours: 2,
+  blockedDates: [],
+};
+const DEFAULT_NOTIFICATIONS = {
+  email: true,
+  whatsapp: false,
+  telegram: false,
+  reminderHours: 24,
 };
 const WEEKDAY_NAMES = ["Вс", "Пн", "Вт", "Ср", "Чт", "Пт", "Сб"];
 
@@ -18,6 +28,7 @@ const state = {
   selectedSlot: null,
   selectedInstructorId: ANY_INSTRUCTOR_ID,
   editingId: null,
+  calendarStart: getStartOfWeek(new Date()),
   bookings: loadBookings(),
   instructors: loadInstructors(),
   currentInstructorId: localStorage.getItem(INSTRUCTOR_SESSION_KEY),
@@ -53,11 +64,23 @@ const adminNote = document.querySelector("#adminNote");
 const exportCsv = document.querySelector("#exportCsv");
 const clearDemo = document.querySelector("#clearDemo");
 const adminView = document.querySelector("#adminView");
+const calendarView = document.querySelector("#calendarView");
+const analyticsView = document.querySelector("#analyticsView");
 const settingsView = document.querySelector("#settingsView");
+const notificationList = document.querySelector("#notificationList");
+const calendarWeekLabel = document.querySelector("#calendarWeekLabel");
+const calendarGrid = document.querySelector("#calendarGrid");
+const analyticsCards = document.querySelector("#analyticsCards");
+const analyticsBars = document.querySelector("#analyticsBars");
+const prevWeek = document.querySelector("#prevWeek");
+const todayWeek = document.querySelector("#todayWeek");
+const nextWeek = document.querySelector("#nextWeek");
 const settingsForm = document.querySelector("#settingsForm");
 const settingsSummary = document.querySelector("#settingsSummary");
 const settingsNote = document.querySelector("#settingsNote");
 const resetSettings = document.querySelector("#resetSettings");
+const addBlockedDate = document.querySelector("#addBlockedDate");
+const blockedDateList = document.querySelector("#blockedDateList");
 const editDrawer = document.querySelector("#editDrawer");
 const bookingEditForm = document.querySelector("#bookingEditForm");
 const cancelEdit = document.querySelector("#cancelEdit");
@@ -80,6 +103,11 @@ const fullDateFormatter = new Intl.DateTimeFormat("ru-RU", {
   day: "numeric",
   month: "long",
   weekday: "long",
+});
+
+const compactDateFormatter = new Intl.DateTimeFormat("ru-RU", {
+  day: "numeric",
+  month: "short",
 });
 
 function loadBookings() {
@@ -131,7 +159,65 @@ function normalizeSettings(settings) {
   }
 
   next.lessonDuration = Number(next.lessonDuration) || DEFAULT_SETTINGS.lessonDuration;
+  next.breakStart = isValidTime(next.breakStart) ? next.breakStart : "";
+  next.breakEnd = isValidTime(next.breakEnd) ? next.breakEnd : "";
+
+  if (next.breakStart && next.breakEnd && timeToMinutes(next.breakStart) >= timeToMinutes(next.breakEnd)) {
+    next.breakStart = "";
+    next.breakEnd = "";
+  }
+
+  next.minAdvanceHours = Number(next.minAdvanceHours);
+  if (!Number.isFinite(next.minAdvanceHours) || next.minAdvanceHours < 0) {
+    next.minAdvanceHours = DEFAULT_SETTINGS.minAdvanceHours;
+  }
+  next.blockedDates = normalizeBlockedDates(next.blockedDates);
   return next;
+}
+
+function normalizeBlockedDates(items) {
+  if (!Array.isArray(items)) {
+    return [];
+  }
+
+  const seen = new Set();
+  return items
+    .map((item) => {
+      const date = String(item?.date ?? "").trim();
+      if (!isDateKey(date) || seen.has(date)) {
+        return null;
+      }
+
+      seen.add(date);
+      return {
+        id: String(item.id ?? createId("blocked")),
+        date,
+        reason: String(item.reason ?? "").trim(),
+      };
+    })
+    .filter(Boolean)
+    .sort((a, b) => a.date.localeCompare(b.date));
+}
+
+function normalizeNotifications(notifications) {
+  const next = {
+    ...DEFAULT_NOTIFICATIONS,
+    ...(notifications ?? {}),
+  };
+
+  next.email = Boolean(next.email);
+  next.whatsapp = Boolean(next.whatsapp);
+  next.telegram = Boolean(next.telegram);
+  next.reminderHours = Number(next.reminderHours) || DEFAULT_NOTIFICATIONS.reminderHours;
+  return next;
+}
+
+function isValidTime(value) {
+  return /^\d{2}:\d{2}$/.test(String(value ?? ""));
+}
+
+function isDateKey(value) {
+  return /^\d{4}-\d{2}-\d{2}$/.test(String(value ?? ""));
 }
 
 function normalizeLogin(value) {
@@ -161,6 +247,7 @@ function normalizeInstructor(instructor) {
     login,
     password: String(instructor.password ?? ""),
     schedule: normalizeSettings(instructor.schedule),
+    notifications: normalizeNotifications(instructor.notifications),
     createdAt: instructor.createdAt ?? new Date().toISOString(),
   };
 }
@@ -239,6 +326,31 @@ function getDateFromKey(dateKey) {
   return new Date(year, month - 1, day);
 }
 
+function addDays(date, amount) {
+  const next = new Date(date);
+  next.setDate(date.getDate() + amount);
+  return next;
+}
+
+function getStartOfWeek(date) {
+  const next = new Date(date);
+  next.setHours(0, 0, 0, 0);
+  const offset = (next.getDay() + 6) % 7;
+  next.setDate(next.getDate() - offset);
+  return next;
+}
+
+function getBookingStartDate(dateKey, time) {
+  const date = getDateFromKey(dateKey);
+  const [hours, minutes] = time.split(":").map(Number);
+  date.setHours(hours, minutes, 0, 0);
+  return date;
+}
+
+function getBlockedDate(settings, dateKey) {
+  return normalizeSettings(settings).blockedDates.find((item) => item.date === dateKey) ?? null;
+}
+
 function getStudentInstructorCandidates() {
   if (state.selectedInstructorId === ANY_INSTRUCTOR_ID) {
     return state.instructors;
@@ -258,7 +370,7 @@ function getDays() {
     offset += 1;
 
     const dateKey = toDateKey(candidate);
-    if (getStudentInstructorCandidates().some((instructor) => isInstructorWorkingOnDate(instructor, dateKey))) {
+    if (getStudentInstructorCandidates().some((instructor) => getAvailableTimesForInstructor(instructor, dateKey).length > 0)) {
       days.push(candidate);
     }
   }
@@ -285,13 +397,30 @@ function getWorkHours(settings) {
   const slots = [];
 
   for (let time = start; time + duration <= end; time += duration) {
-    slots.push(minutesToTime(time));
+    const slotEnd = time + duration;
+    if (!isSlotOverlappingBreak(schedule, time, slotEnd)) {
+      slots.push(minutesToTime(time));
+    }
   }
 
   return slots;
 }
 
+function isSlotOverlappingBreak(settings, slotStart, slotEnd) {
+  if (!settings.breakStart || !settings.breakEnd) {
+    return false;
+  }
+
+  const breakStart = timeToMinutes(settings.breakStart);
+  const breakEnd = timeToMinutes(settings.breakEnd);
+  return slotStart < breakEnd && slotEnd > breakStart;
+}
+
 function isInstructorWorkingOnDate(instructor, dateKey) {
+  if (getBlockedDate(instructor.schedule, dateKey)) {
+    return false;
+  }
+
   const date = getDateFromKey(dateKey);
   return instructor.schedule.workDays.includes(date.getDay());
 }
@@ -315,7 +444,26 @@ function countInstructorBookings(instructorId, dateKey) {
   )).length;
 }
 
-function findAvailableInstructorForSlot(dateKey, time, requestedInstructorId = state.selectedInstructorId, ignoredId = null) {
+function isSlotBookableByAdvance(instructor, dateKey, time) {
+  const minAdvanceMs = normalizeSettings(instructor.schedule).minAdvanceHours * 60 * 60 * 1000;
+  return getBookingStartDate(dateKey, time).getTime() - Date.now() >= minAdvanceMs;
+}
+
+function getAvailableTimesForInstructor(instructor, dateKey, options = {}) {
+  const { ignoredId = null, respectAdvance = true } = options;
+
+  if (!isInstructorWorkingOnDate(instructor, dateKey)) {
+    return [];
+  }
+
+  return getWorkHours(instructor.schedule).filter((time) => (
+    !isSlotBooked(dateKey, time, instructor.id, ignoredId)
+    && (!respectAdvance || isSlotBookableByAdvance(instructor, dateKey, time))
+  ));
+}
+
+function findAvailableInstructorForSlot(dateKey, time, requestedInstructorId = state.selectedInstructorId, ignoredId = null, options = {}) {
+  const { respectAdvance = true } = options;
   const candidates = requestedInstructorId === ANY_INSTRUCTOR_ID
     ? state.instructors
     : [getInstructorById(requestedInstructorId)].filter(Boolean);
@@ -324,6 +472,7 @@ function findAvailableInstructorForSlot(dateKey, time, requestedInstructorId = s
     .filter((instructor) => (
       isSlotInSchedule(instructor, dateKey, time)
       && !isSlotBooked(dateKey, time, instructor.id, ignoredId)
+      && (!respectAdvance || isSlotBookableByAdvance(instructor, dateKey, time))
     ))
     .sort((a, b) => countInstructorBookings(a.id, dateKey) - countInstructorBookings(b.id, dateKey))
     .at(0) ?? null;
@@ -340,7 +489,7 @@ function getStudentSlotTimes(dateKey) {
       return;
     }
 
-    getWorkHours(instructor.schedule).forEach((time) => slots.add(time));
+    getAvailableTimesForInstructor(instructor, dateKey).forEach((time) => slots.add(time));
   });
 
   return [...slots].sort((a, b) => timeToMinutes(a) - timeToMinutes(b));
@@ -529,6 +678,13 @@ function renderSettingsForm() {
   settingsForm.startTime.value = settings.startTime;
   settingsForm.endTime.value = settings.endTime;
   settingsForm.lessonDuration.value = String(settings.lessonDuration);
+  settingsForm.breakStart.value = settings.breakStart;
+  settingsForm.breakEnd.value = settings.breakEnd;
+  settingsForm.minAdvanceHours.value = String(settings.minAdvanceHours);
+  settingsForm.notifyEmail.checked = instructor.notifications.email;
+  settingsForm.notifyWhatsapp.checked = instructor.notifications.whatsapp;
+  settingsForm.notifyTelegram.checked = instructor.notifications.telegram;
+  settingsForm.reminderHours.value = String(instructor.notifications.reminderHours);
 
   settingsForm.querySelectorAll("[name='workDays']").forEach((input) => {
     input.checked = settings.workDays.includes(Number(input.value));
@@ -538,7 +694,194 @@ function renderSettingsForm() {
     .map((day) => WEEKDAY_NAMES[day])
     .join(", ");
   const slotCount = getWorkHours(settings).length;
-  settingsSummary.textContent = `Рабочие дни: ${days}. Время: ${settings.startTime}-${settings.endTime}. Длительность: ${settings.lessonDuration} минут. Слотов в день: ${slotCount}.`;
+  const breakText = settings.breakStart && settings.breakEnd ? ` Перерыв: ${settings.breakStart}-${settings.breakEnd}.` : "";
+  const blockedText = settings.blockedDates.length ? ` Недоступных дат: ${settings.blockedDates.length}.` : "";
+  const channels = getNotificationChannelLabels(instructor.notifications).join(", ") || "выключены";
+  settingsSummary.textContent = `Рабочие дни: ${days}. Время: ${settings.startTime}-${settings.endTime}.${breakText} Длительность: ${settings.lessonDuration} минут. Слотов в день: ${slotCount}. Запись минимум за ${settings.minAdvanceHours} ч.${blockedText} Уведомления: ${channels}.`;
+  renderBlockedDateList();
+}
+
+function getNotificationChannelLabels(notifications) {
+  const settings = normalizeNotifications(notifications);
+  const labels = [];
+
+  if (settings.email) labels.push("email");
+  if (settings.whatsapp) labels.push("WhatsApp");
+  if (settings.telegram) labels.push("Telegram");
+  return labels;
+}
+
+function renderBlockedDateList() {
+  if (!blockedDateList) return;
+
+  const instructor = getCurrentInstructor();
+  if (!instructor || instructor.schedule.blockedDates.length === 0) {
+    blockedDateList.innerHTML = `<p class="empty-state compact-empty">Пока нет отдельных выходных или отпуска.</p>`;
+    return;
+  }
+
+  blockedDateList.innerHTML = instructor.schedule.blockedDates
+    .map((item) => `
+      <div class="blocked-date-item">
+        <span>
+          <strong>${escapeHtml(shortDateFormatter.format(getDateFromKey(item.date)))}</strong>
+          ${item.reason ? escapeHtml(item.reason) : "Недоступно"}
+        </span>
+        <button type="button" data-remove-blocked="${escapeHtml(item.id)}">Удалить</button>
+      </div>
+    `)
+    .join("");
+}
+
+function getUpcomingBookings(daysAhead = 14) {
+  const now = new Date();
+  const end = addDays(now, daysAhead);
+
+  return getCurrentInstructorBookings()
+    .filter((booking) => {
+      const startsAt = getBookingStartDate(booking.date, booking.time);
+      return startsAt >= now && startsAt <= end;
+    })
+    .sort((a, b) => getBookingStartDate(a.date, a.time) - getBookingStartDate(b.date, b.time));
+}
+
+function renderNotifications() {
+  if (!notificationList) return;
+
+  const instructor = getCurrentInstructor();
+  if (!instructor) {
+    notificationList.innerHTML = `<p class="empty-state compact-empty">Войдите в кабинет, чтобы видеть напоминания.</p>`;
+    return;
+  }
+
+  const channels = getNotificationChannelLabels(instructor.notifications);
+  if (channels.length === 0) {
+    notificationList.innerHTML = `<p class="empty-state compact-empty">Каналы уведомлений выключены. Их можно включить в настройках.</p>`;
+    return;
+  }
+
+  const reminders = getUpcomingBookings(14).slice(0, 4);
+  if (reminders.length === 0) {
+    notificationList.innerHTML = `<p class="empty-state compact-empty">На ближайшие две недели напоминаний нет.</p>`;
+    return;
+  }
+
+  notificationList.innerHTML = reminders
+    .map((booking) => {
+      const startsAt = getBookingStartDate(booking.date, booking.time);
+      const remindAt = new Date(startsAt.getTime() - instructor.notifications.reminderHours * 60 * 60 * 1000);
+      return `
+        <article class="notification-item">
+          <strong>${escapeHtml(booking.name)} · ${escapeHtml(formatSlot(booking.date, booking.time))}</strong>
+          <span>Напомнить ${escapeHtml(compactDateFormatter.format(remindAt))} в ${minutesToTime(remindAt.getHours() * 60 + remindAt.getMinutes())} · ${escapeHtml(channels.join(", "))}</span>
+        </article>
+      `;
+    })
+    .join("");
+}
+
+function renderCalendar() {
+  if (!calendarGrid || !calendarWeekLabel) return;
+
+  const instructor = getCurrentInstructor();
+  if (!instructor) {
+    calendarGrid.innerHTML = `<p class="empty-state">Войдите в кабинет инструктора, чтобы увидеть календарь.</p>`;
+    return;
+  }
+
+  const weekDays = Array.from({ length: 7 }, (_, index) => addDays(state.calendarStart, index));
+  const weekStart = compactDateFormatter.format(weekDays[0]);
+  const weekEnd = compactDateFormatter.format(weekDays[6]);
+  calendarWeekLabel.textContent = `${weekStart} - ${weekEnd}`;
+
+  calendarGrid.innerHTML = weekDays
+    .map((date) => {
+      const dateKey = toDateKey(date);
+      const blocked = getBlockedDate(instructor.schedule, dateKey);
+      const dayBookings = getCurrentInstructorBookings()
+        .filter((booking) => booking.date === dateKey)
+        .sort((a, b) => a.time.localeCompare(b.time));
+      const freeSlots = getAvailableTimesForInstructor(instructor, dateKey, { respectAdvance: false }).length;
+
+      return `
+        <section class="calendar-day">
+          <div class="calendar-day-head">
+            <strong>${escapeHtml(dateFormatter.format(date).replace(".", ""))}</strong>
+            <span>${blocked ? escapeHtml(blocked.reason || "Недоступно") : `${freeSlots} свободных`}</span>
+          </div>
+          <div class="calendar-bookings">
+            ${dayBookings.length ? dayBookings.map((booking) => `
+              <button class="calendar-booking" type="button" data-edit="${escapeHtml(booking.id)}">
+                <strong>${escapeHtml(booking.time)} · ${escapeHtml(booking.name)}</strong>
+                <span>${escapeHtml(booking.phone)}${booking.comment ? ` · ${escapeHtml(booking.comment)}` : ""}</span>
+              </button>
+            `).join("") : `<p class="calendar-empty">Записей нет</p>`}
+          </div>
+        </section>
+      `;
+    })
+    .join("");
+}
+
+function renderAnalytics() {
+  if (!analyticsCards || !analyticsBars) return;
+
+  const instructor = getCurrentInstructor();
+  if (!instructor) {
+    analyticsCards.innerHTML = `<p class="empty-state">Войдите в кабинет инструктора, чтобы увидеть аналитику.</p>`;
+    analyticsBars.innerHTML = "";
+    return;
+  }
+
+  const bookings = getCurrentInstructorBookings();
+  const now = new Date();
+  const inSevenDays = addDays(now, 7);
+  const upcoming = bookings.filter((booking) => {
+    const startsAt = getBookingStartDate(booking.date, booking.time);
+    return startsAt >= now && startsAt <= inSevenDays;
+  });
+  const todayKey = toDateKey(now);
+  const todayCount = bookings.filter((booking) => booking.date === todayKey).length;
+  const mailingCount = bookings.filter((booking) => booking.mailing).length;
+  const nextWeekDates = Array.from({ length: 7 }, (_, index) => addDays(now, index));
+  const totalSlots = nextWeekDates.reduce((sum, date) => {
+    const dateKey = toDateKey(date);
+    return sum + (isInstructorWorkingOnDate(instructor, dateKey) ? getWorkHours(instructor.schedule).length : 0);
+  }, 0);
+  const occupancy = totalSlots ? Math.round((upcoming.length / totalSlots) * 100) : 0;
+
+  analyticsCards.innerHTML = [
+    ["Всего заявок", bookings.length],
+    ["В ближайшие 7 дней", upcoming.length],
+    ["Сегодня", todayCount],
+    ["Email-согласий", mailingCount],
+    ["Загрузка недели", `${occupancy}%`],
+  ].map(([label, value]) => `
+    <article class="analytics-card">
+      <span>${escapeHtml(label)}</span>
+      <strong>${escapeHtml(value)}</strong>
+    </article>
+  `).join("");
+
+  const dailyCounts = nextWeekDates.map((date) => {
+    const dateKey = toDateKey(date);
+    return {
+      date,
+      count: bookings.filter((booking) => booking.date === dateKey).length,
+    };
+  });
+  const maxCount = Math.max(...dailyCounts.map((item) => item.count), 1);
+
+  analyticsBars.innerHTML = dailyCounts.map((item) => {
+    const width = Math.max(8, Math.round((item.count / maxCount) * 100));
+    return `
+      <div class="analytics-bar-row">
+        <span>${escapeHtml(shortDateFormatter.format(item.date))}</span>
+        <div class="analytics-track"><i style="width: ${width}%"></i></div>
+        <strong>${item.count}</strong>
+      </div>
+    `;
+  }).join("");
 }
 
 function renderEditInstructorOptions(selectedInstructorId) {
@@ -590,6 +933,9 @@ function render() {
   renderBookings();
   renderCurrentInstructorName();
   renderSettingsForm();
+  renderNotifications();
+  renderCalendar();
+  renderAnalytics();
   renderEditForm();
 }
 
@@ -715,19 +1061,29 @@ function showInstructorLogin() {
   showLoginMode();
 }
 
+function setInstructorView(view) {
+  const views = {
+    admin: adminView,
+    calendar: calendarView,
+    analytics: analyticsView,
+    settings: settingsView,
+  };
+
+  Object.entries(views).forEach(([key, element]) => {
+    if (element) {
+      element.hidden = key !== view;
+    }
+  });
+
+  viewButtons.forEach((button) => button.classList.toggle("active", button.dataset.view === view));
+  render();
+}
+
 function showInstructorDashboard() {
   window.history.replaceState(null, "", "index.html#instructor");
 
-  if (adminView) {
-    adminView.hidden = false;
-  }
-  if (settingsView) {
-    settingsView.hidden = true;
-  }
-  viewButtons.forEach((button) => button.classList.toggle("active", button.dataset.view === "admin"));
-
   showAppScreen("instructor");
-  render();
+  setInstructorView("admin");
 }
 
 function openInstructorFlow() {
@@ -995,6 +1351,9 @@ function handleSettingsSubmit(event) {
   const startTime = formData.get("startTime");
   const endTime = formData.get("endTime");
   const lessonDuration = Number(formData.get("lessonDuration"));
+  const breakStart = formData.get("breakStart");
+  const breakEnd = formData.get("breakEnd");
+  const minAdvanceHours = Number(formData.get("minAdvanceHours"));
 
   if (workDays.length === 0) {
     showSettingsNote("Выберите хотя бы один рабочий день.", true);
@@ -1011,11 +1370,31 @@ function handleSettingsSubmit(event) {
     return;
   }
 
+  if ((breakStart && !breakEnd) || (!breakStart && breakEnd)) {
+    showSettingsNote("Для перерыва нужно указать и начало, и конец.", true);
+    return;
+  }
+
+  if (breakStart && breakEnd && timeToMinutes(breakStart) >= timeToMinutes(breakEnd)) {
+    showSettingsNote("Конец перерыва должен быть позже начала.", true);
+    return;
+  }
+
   instructor.schedule = normalizeSettings({
     workDays,
     startTime,
     endTime,
     lessonDuration,
+    breakStart,
+    breakEnd,
+    minAdvanceHours,
+    blockedDates: instructor.schedule.blockedDates,
+  });
+  instructor.notifications = normalizeNotifications({
+    email: formData.get("notifyEmail") === "on",
+    whatsapp: formData.get("notifyWhatsapp") === "on",
+    telegram: formData.get("notifyTelegram") === "on",
+    reminderHours: formData.get("reminderHours"),
   });
   state.activeDate = null;
   state.selectedSlot = null;
@@ -1085,6 +1464,7 @@ function handleRegister(event) {
     login,
     password,
     schedule: loadLegacySettings(),
+    notifications: { ...DEFAULT_NOTIFICATIONS },
     createdAt: new Date().toISOString(),
   };
 
@@ -1157,6 +1537,13 @@ bookingList?.addEventListener("click", (event) => {
   }
 });
 
+calendarGrid?.addEventListener("click", (event) => {
+  const editButton = event.target.closest("[data-edit]");
+  if (editButton) {
+    startEditBooking(editButton.dataset.edit);
+  }
+});
+
 bookingForm?.addEventListener("submit", handleSubmit);
 closeBooking?.addEventListener("click", closeBookingDrawer);
 cancelBooking?.addEventListener("click", closeBookingDrawer);
@@ -1204,6 +1591,56 @@ clearDemo?.addEventListener("click", () => {
 });
 
 settingsForm?.addEventListener("submit", handleSettingsSubmit);
+addBlockedDate?.addEventListener("click", () => {
+  const instructor = getCurrentInstructor();
+
+  if (!instructor) {
+    showSettingsNote("Сначала войдите в кабинет инструктора.", true);
+    return;
+  }
+
+  const date = settingsForm.blockedDate.value;
+  const reason = settingsForm.blockedReason.value.trim();
+
+  if (!isDateKey(date)) {
+    showSettingsNote("Выберите дату, которую нужно закрыть.", true);
+    return;
+  }
+
+  if (instructor.schedule.blockedDates.some((item) => item.date === date)) {
+    showSettingsNote("Эта дата уже добавлена.", true);
+    return;
+  }
+
+  instructor.schedule.blockedDates = normalizeBlockedDates([
+    ...instructor.schedule.blockedDates,
+    { id: createId("blocked"), date, reason },
+  ]);
+  settingsForm.blockedDate.value = "";
+  settingsForm.blockedReason.value = "";
+  state.activeDate = null;
+  state.selectedSlot = null;
+  saveInstructors();
+  showSettingsNote("Дата закрыта для записи.");
+  render();
+});
+
+blockedDateList?.addEventListener("click", (event) => {
+  const removeButton = event.target.closest("[data-remove-blocked]");
+  if (!removeButton) return;
+
+  const instructor = getCurrentInstructor();
+  if (!instructor) return;
+
+  instructor.schedule.blockedDates = instructor.schedule.blockedDates
+    .filter((item) => item.id !== removeButton.dataset.removeBlocked);
+  state.activeDate = null;
+  state.selectedSlot = null;
+  saveInstructors();
+  showSettingsNote("Дата снова доступна по рабочему расписанию.");
+  render();
+});
+
 resetSettings?.addEventListener("click", () => {
   const instructor = getCurrentInstructor();
 
@@ -1213,6 +1650,7 @@ resetSettings?.addEventListener("click", () => {
   }
 
   instructor.schedule = { ...DEFAULT_SETTINGS };
+  instructor.notifications = { ...DEFAULT_NOTIFICATIONS };
   state.activeDate = null;
   state.selectedSlot = null;
   saveInstructors();
@@ -1220,18 +1658,24 @@ resetSettings?.addEventListener("click", () => {
   render();
 });
 
+prevWeek?.addEventListener("click", () => {
+  state.calendarStart = addDays(state.calendarStart, -7);
+  renderCalendar();
+});
+
+todayWeek?.addEventListener("click", () => {
+  state.calendarStart = getStartOfWeek(new Date());
+  renderCalendar();
+});
+
+nextWeek?.addEventListener("click", () => {
+  state.calendarStart = addDays(state.calendarStart, 7);
+  renderCalendar();
+});
+
 viewButtons.forEach((button) => {
   button.addEventListener("click", () => {
-    const view = button.dataset.view;
-
-    if (adminView) {
-      adminView.hidden = view !== "admin";
-    }
-    if (settingsView) {
-      settingsView.hidden = view !== "settings";
-    }
-
-    viewButtons.forEach((item) => item.classList.toggle("active", item === button));
+    setInstructorView(button.dataset.view);
   });
 });
 
