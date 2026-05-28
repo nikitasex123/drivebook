@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Кабинет инструктора</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body data-page="instructor">
+    <main class="app-shell">
+      <header class="top-bar">
+        <div>
+          <p class="eyebrow">DriveBook</p>
+          <strong>Кабинет инструктора</strong>
+        </div>
+        <nav class="view-switch instructor-switch" aria-label="Разделы кабинета">
+          <button class="active" type="button" data-view="admin">Журнал</button>
+          <button type="button" data-view="settings">Настройки</button>
+        </nav>
+      </header>
+
+      <section class="admin-panel" id="adminView" aria-labelledby="admin-title">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Журнал</p>
+            <h2 id="admin-title">Заявки учеников</h2>
+          </div>
+          <div class="admin-actions">
+            <button id="exportCsv" type="button">Экспорт CSV</button>
+            <button id="clearDemo" type="button">Очистить</button>
+          </div>
+        </div>
+        <p class="form-note" id="adminNote" role="status"></p>
+
+        <form class="edit-form" id="bookingEditForm" hidden>
+          <div class="section-heading compact">
+            <div>
+              <p class="eyebrow">Редактирование</p>
+              <h2>Изменить заявку</h2>
+            </div>
+          </div>
+
+          <div class="settings-grid">
+            <label>
+              Дата
+              <input id="editDate" name="editDate" type="date" required />
+            </label>
+            <label>
+              Время
+              <input id="editTime" name="editTime" type="time" required />
+            </label>
+            <label>
+              Инструктор
+              <select id="editInstructor" name="editInstructor">
+                <option value="Марина Соколова">Марина Соколова</option>
+                <option value="Любой свободный инструктор">Любой свободный инструктор</option>
+                <option value="Алексей Волков">Алексей Волков</option>
+              </select>
+            </label>
+          </div>
+
+          <div class="settings-grid">
+            <label>
+              Имя ученика
+              <input id="editName" name="editName" required />
+            </label>
+            <label>
+              Телефон
+              <input id="editPhone" name="editPhone" inputmode="tel" required />
+            </label>
+            <label>
+              Email
+              <input id="editEmail" name="editEmail" type="email" inputmode="email" />
+            </label>
+          </div>
+
+          <label>
+            Комментарий
+            <textarea id="editComment" name="editComment" rows="3"></textarea>
+          </label>
+
+          <label class="check-row">
+            <input id="editMailing" name="editMailing" type="checkbox" />
+            <span>Можно присылать напоминания и новости на email</span>
+          </label>
+
+          <div class="settings-actions">
+            <button class="primary-action" type="submit">Сохранить изменения</button>
+            <button id="cancelEdit" type="button">Отмена</button>
+          </div>
+          <p class="form-note" id="editNote" role="status"></p>
+        </form>
+
+        <div class="booking-list" id="bookingList"></div>
+      </section>
+
+      <section class="admin-panel" id="settingsView" aria-labelledby="settings-title" hidden>
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Инструктор</p>
+            <h2 id="settings-title">Настройки расписания</h2>
+          </div>
+        </div>
+
+        <form class="settings-form" id="settingsForm">
+          <fieldset>
+            <legend>Рабочие дни</legend>
+            <div class="weekday-grid">
+              <label class="check-tile">
+                <input type="checkbox" name="workDays" value="1" />
+                <span>Пн</span>
+              </label>
+              <label class="check-tile">
+                <input type="checkbox" name="workDays" value="2" />
+                <span>Вт</span>
+              </label>
+              <label class="check-tile">
+                <input type="checkbox" name="workDays" value="3" />
+                <span>Ср</span>
+              </label>
+              <label class="check-tile">
+                <input type="checkbox" name="workDays" value="4" />
+                <span>Чт</span>
+              </label>
+              <label class="check-tile">
+                <input type="checkbox" name="workDays" value="5" />
+                <span>Пт</span>
+              </label>
+              <label class="check-tile">
+                <input type="checkbox" name="workDays" value="6" />
+                <span>Сб</span>
+              </label>
+              <label class="check-tile">
+                <input type="checkbox" name="workDays" value="0" />
+                <span>Вс</span>
+              </label>
+            </div>
+          </fieldset>
+
+          <div class="settings-grid">
+            <label>
+              Начало дня
+              <input id="startTime" name="startTime" type="time" required />
+            </label>
+
+            <label>
+              Конец дня
+              <input id="endTime" name="endTime" type="time" required />
+            </label>
+
+            <label>
+              Длительность занятия
+              <select id="lessonDuration" name="lessonDuration">
+                <option value="45">45 минут</option>
+                <option value="60">60 минут</option>
+                <option value="90">90 минут</option>
+                <option value="120">120 минут</option>
+              </select>
+            </label>
+          </div>
+
+          <div class="settings-summary" id="settingsSummary"></div>
+
+          <div class="settings-actions">
+            <button class="primary-action" type="submit">Сохранить расписание</button>
+            <button id="resetSettings" type="button">Сбросить</button>
+          </div>
+          <p class="form-note" id="settingsNote" role="status"></p>
+        </form>
+      </section>
+    </main>
+
+    <script src="app.js"></script>
+  </body>
+</html>

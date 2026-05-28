@@ -60,8 +60,8 @@ button {
 
 .view-switch {
   display: inline-grid;
-  grid-template-columns: repeat(3, 1fr);
-  min-width: 330px;
+  grid-template-columns: repeat(2, 1fr);
+  min-width: 250px;
   padding: 4px;
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -454,13 +454,18 @@ textarea:focus {
 
 .booking-card {
   display: grid;
-  grid-template-columns: minmax(180px, 0.9fr) minmax(220px, 1fr) minmax(200px, 0.85fr) auto;
+  grid-template-columns: minmax(180px, 0.9fr) minmax(220px, 1fr) minmax(200px, 0.85fr) minmax(170px, auto);
   gap: 14px;
   align-items: center;
   border: 1px solid var(--line);
   border-radius: 8px;
   padding: 14px;
   background: #fff;
+}
+
+.booking-card.editing {
+  border-color: var(--accent);
+  background: var(--accent-soft);
 }
 
 .booking-card h3,
@@ -497,10 +502,30 @@ textarea:focus {
   font-weight: 800;
 }
 
+.card-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
 .booking-card button {
-  border: 1px solid #f0caca;
+  border: 1px solid var(--line);
+  background: #fff;
+  color: var(--ink);
+}
+
+.booking-card .danger-action {
+  border-color: #f0caca;
   background: #fff5f5;
   color: var(--danger);
+}
+
+.edit-form {
+  margin-bottom: 16px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 18px;
+  background: var(--surface-strong);
 }
 
 .settings-form {
@@ -576,6 +601,10 @@ textarea:focus {
     grid-template-columns: 1fr;
   }
 
+  .card-actions {
+    justify-content: flex-start;
+  }
+
   .form-panel {
     border-left: 0;
     border-top: 1px solid var(--line);
@@ -631,6 +660,11 @@ textarea:focus {
 
   .view-switch {
     width: 100%;
+  }
+
+  .card-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
   }
 
   .day-tabs,

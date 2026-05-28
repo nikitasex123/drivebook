@@ -12,6 +12,7 @@ const WEEKDAY_NAMES = ["Вс", "Пн", "Вт", "Ср", "Чт", "Пт", "Сб"];
 const state = {
   activeDate: null,
   selectedSlot: null,
+  editingId: null,
   bookings: loadBookings(),
   settings: loadSettings(),
 };
@@ -22,15 +23,18 @@ const bookingForm = document.querySelector("#bookingForm");
 const selectedSlot = document.querySelector("#selectedSlot");
 const bookingList = document.querySelector("#bookingList");
 const formNote = document.querySelector("#formNote");
+const adminNote = document.querySelector("#adminNote");
 const exportCsv = document.querySelector("#exportCsv");
 const clearDemo = document.querySelector("#clearDemo");
-const bookingView = document.querySelector("#bookingView");
 const adminView = document.querySelector("#adminView");
 const settingsView = document.querySelector("#settingsView");
 const settingsForm = document.querySelector("#settingsForm");
 const settingsSummary = document.querySelector("#settingsSummary");
 const settingsNote = document.querySelector("#settingsNote");
 const resetSettings = document.querySelector("#resetSettings");
+const bookingEditForm = document.querySelector("#bookingEditForm");
+const cancelEdit = document.querySelector("#cancelEdit");
+const editNote = document.querySelector("#editNote");
 const viewButtons = document.querySelectorAll("[data-view]");
 
 const dateFormatter = new Intl.DateTimeFormat("ru-RU", {
@@ -148,11 +152,15 @@ function formatSlot(dateKey, time) {
   return `${fullDateFormatter.format(date)}, ${time}`;
 }
 
-function isSlotBooked(dateKey, time) {
-  return state.bookings.some((booking) => booking.date === dateKey && booking.time === time);
+function isSlotBooked(dateKey, time, ignoredId = null) {
+  return state.bookings.some((booking) => (
+    booking.id !== ignoredId && booking.date === dateKey && booking.time === time
+  ));
 }
 
 function renderDays() {
+  if (!dayTabs) return;
+
   const days = getDays();
   const visibleDates = days.map(toDateKey);
 
@@ -176,10 +184,12 @@ function renderDays() {
 }
 
 function renderSlots() {
+  if (!slotGrid) return;
+
   const slots = getWorkHours();
 
   if (slots.length === 0) {
-    slotGrid.innerHTML = `<p class="empty-state">В настройках нет доступного времени. Увеличьте рабочий день или уменьшите длительность занятия.</p>`;
+    slotGrid.innerHTML = `<p class="empty-state">В настройках нет доступного времени. Инструктор должен изменить расписание.</p>`;
     return;
   }
 
@@ -202,6 +212,8 @@ function renderSlots() {
 }
 
 function renderSelectedSlot() {
+  if (!selectedSlot) return;
+
   if (!state.selectedSlot) {
     selectedSlot.textContent = "Выберите дату и время";
     selectedSlot.classList.remove("ready");
@@ -213,19 +225,21 @@ function renderSelectedSlot() {
 }
 
 function renderBookings() {
+  if (!bookingList) return;
+
   const bookings = [...state.bookings].sort((a, b) => `${a.date} ${a.time}`.localeCompare(`${b.date} ${b.time}`));
 
   if (bookings.length === 0) {
-    bookingList.innerHTML = `<p class="empty-state">Пока нет заявок. Новые записи появятся здесь сразу после отправки формы.</p>`;
+    bookingList.innerHTML = `<p class="empty-state">Пока нет заявок. Новые записи появятся здесь после отправки учеником формы.</p>`;
     return;
   }
 
   bookingList.innerHTML = bookings
     .map((booking) => `
-      <article class="booking-card">
+      <article class="booking-card ${state.editingId === booking.id ? "editing" : ""}">
         <div>
           <p class="booking-time">${formatSlot(booking.date, booking.time)}</p>
-          <p>${booking.instructor}</p>
+          <p>${escapeHtml(booking.instructor)}</p>
         </div>
         <div>
           <h3>${escapeHtml(booking.name)}</h3>
@@ -235,13 +249,18 @@ function renderBookings() {
           <span class="status-pill">${booking.mailing ? "email включен" : "только связь"}</span>
           <p>${booking.comment ? escapeHtml(booking.comment) : "Без комментария"}</p>
         </div>
-        <button type="button" data-delete="${booking.id}">Удалить</button>
+        <div class="card-actions">
+          <button type="button" data-edit="${booking.id}">Изменить</button>
+          <button class="danger-action" type="button" data-delete="${booking.id}">Удалить</button>
+        </div>
       </article>
     `)
     .join("");
 }
 
 function renderSettingsForm() {
+  if (!settingsForm || !settingsSummary) return;
+
   settingsForm.startTime.value = state.settings.startTime;
   settingsForm.endTime.value = state.settings.endTime;
   settingsForm.lessonDuration.value = String(state.settings.lessonDuration);
@@ -257,17 +276,58 @@ function renderSettingsForm() {
   settingsSummary.textContent = `Рабочие дни: ${days}. Время: ${state.settings.startTime}-${state.settings.endTime}. Длительность: ${state.settings.lessonDuration} минут. Слотов в день: ${slotCount}.`;
 }
 
+function renderEditForm() {
+  if (!bookingEditForm) return;
+
+  const booking = state.bookings.find((item) => item.id === state.editingId);
+  bookingEditForm.hidden = !booking;
+
+  if (!booking) {
+    bookingEditForm.reset();
+    return;
+  }
+
+  bookingEditForm.editDate.value = booking.date;
+  bookingEditForm.editTime.value = booking.time;
+  bookingEditForm.editInstructor.value = booking.instructor;
+  bookingEditForm.editName.value = booking.name;
+  bookingEditForm.editPhone.value = booking.phone;
+  bookingEditForm.editEmail.value = booking.email;
+  bookingEditForm.editComment.value = booking.comment;
+  bookingEditForm.editMailing.checked = booking.mailing;
+}
+
 function render() {
   renderDays();
   renderSlots();
   renderSelectedSlot();
   renderBookings();
   renderSettingsForm();
+  renderEditForm();
 }
 
 function showNote(message, isError = false) {
+  if (!formNote) return;
   formNote.textContent = message;
   formNote.classList.toggle("error", isError);
+}
+
+function showAdminNote(message, isError = false) {
+  if (!adminNote) return;
+  adminNote.textContent = message;
+  adminNote.classList.toggle("error", isError);
+}
+
+function showEditNote(message, isError = false) {
+  if (!editNote) return;
+  editNote.textContent = message;
+  editNote.classList.toggle("error", isError);
+}
+
+function showSettingsNote(message, isError = false) {
+  if (!settingsNote) return;
+  settingsNote.textContent = message;
+  settingsNote.classList.toggle("error", isError);
 }
 
 function validatePhone(value) {
@@ -317,7 +377,7 @@ function handleSubmit(event) {
   saveBookings();
   bookingForm.reset();
   state.selectedSlot = null;
-  showNote("Готово. Заявка добавлена в журнал.");
+  showNote("Готово. Заявка отправлена инструктору.");
   render();
 }
 
@@ -329,9 +389,69 @@ function createId() {
   return `booking-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
 
+function startEditBooking(id) {
+  state.editingId = id;
+  showEditNote("");
+  render();
+  bookingEditForm?.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function cancelEditBooking() {
+  state.editingId = null;
+  showEditNote("");
+  render();
+}
+
+function updateBooking(event) {
+  event.preventDefault();
+
+  const booking = state.bookings.find((item) => item.id === state.editingId);
+  if (!booking) return;
+
+  const formData = new FormData(bookingEditForm);
+  const date = formData.get("editDate");
+  const time = formData.get("editTime");
+  const name = formData.get("editName").trim();
+  const phone = formData.get("editPhone").trim();
+  const email = formData.get("editEmail").trim();
+
+  if (!validatePhone(phone)) {
+    showEditNote("Проверьте телефон: нужно минимум 10 цифр.", true);
+    return;
+  }
+
+  if (isSlotBooked(date, time, booking.id)) {
+    showEditNote("На это время уже есть другая заявка.", true);
+    return;
+  }
+
+  Object.assign(booking, {
+    date,
+    time,
+    name,
+    phone,
+    email,
+    instructor: formData.get("editInstructor"),
+    comment: formData.get("editComment").trim(),
+    mailing: formData.get("editMailing") === "on",
+    updatedAt: new Date().toISOString(),
+  });
+
+  saveBookings();
+  state.editingId = null;
+  showAdminNote("Заявка обновлена.");
+  render();
+}
+
 function deleteBooking(id) {
   state.bookings = state.bookings.filter((booking) => booking.id !== id);
+
+  if (state.editingId === id) {
+    state.editingId = null;
+  }
+
   saveBookings();
+  showAdminNote("Заявка удалена.");
   render();
 }
 
@@ -346,12 +466,12 @@ function escapeHtml(value) {
 
 function exportBookings() {
   if (state.bookings.length === 0) {
-    showNote("Экспортировать пока нечего.", true);
+    showAdminNote("Экспортировать пока нечего.", true);
     return;
   }
 
   const rows = [
-    ["Дата", "Время", "Имя", "Телефон", "Email", "Инструктор", "Рассылка", "Комментарий", "Создано"],
+    ["Дата", "Время", "Имя", "Телефон", "Email", "Инструктор", "Рассылка", "Комментарий", "Создано", "Обновлено"],
     ...state.bookings.map((booking) => [
       booking.date,
       booking.time,
@@ -362,6 +482,7 @@ function exportBookings() {
       booking.mailing ? "да" : "нет",
       booking.comment,
       booking.createdAt,
+      booking.updatedAt ?? "",
     ]),
   ];
 
@@ -407,16 +528,11 @@ function handleSettingsSubmit(event) {
   state.activeDate = null;
   state.selectedSlot = null;
   saveSettings();
-  showSettingsNote("Расписание сохранено. Экран записи обновлен.");
+  showSettingsNote("Расписание сохранено. Страница ученика обновится при открытии.");
   render();
 }
 
-function showSettingsNote(message, isError = false) {
-  settingsNote.textContent = message;
-  settingsNote.classList.toggle("error", isError);
-}
-
-dayTabs.addEventListener("click", (event) => {
+dayTabs?.addEventListener("click", (event) => {
   const tab = event.target.closest("[data-date]");
   if (!tab) return;
 
@@ -426,7 +542,7 @@ dayTabs.addEventListener("click", (event) => {
   render();
 });
 
-slotGrid.addEventListener("click", (event) => {
+slotGrid?.addEventListener("click", (event) => {
   const button = event.target.closest("[data-time]");
   if (!button || button.disabled) return;
 
@@ -438,23 +554,35 @@ slotGrid.addEventListener("click", (event) => {
   render();
 });
 
-bookingList.addEventListener("click", (event) => {
-  const button = event.target.closest("[data-delete]");
-  if (!button) return;
-  deleteBooking(button.dataset.delete);
+bookingList?.addEventListener("click", (event) => {
+  const editButton = event.target.closest("[data-edit]");
+  const deleteButton = event.target.closest("[data-delete]");
+
+  if (editButton) {
+    startEditBooking(editButton.dataset.edit);
+    return;
+  }
+
+  if (deleteButton) {
+    deleteBooking(deleteButton.dataset.delete);
+  }
 });
 
-bookingForm.addEventListener("submit", handleSubmit);
-exportCsv.addEventListener("click", exportBookings);
-clearDemo.addEventListener("click", () => {
+bookingForm?.addEventListener("submit", handleSubmit);
+bookingEditForm?.addEventListener("submit", updateBooking);
+cancelEdit?.addEventListener("click", cancelEditBooking);
+exportCsv?.addEventListener("click", exportBookings);
+clearDemo?.addEventListener("click", () => {
   state.bookings = [];
   state.selectedSlot = null;
+  state.editingId = null;
   saveBookings();
+  showAdminNote("Журнал очищен.");
   render();
 });
 
-settingsForm.addEventListener("submit", handleSettingsSubmit);
-resetSettings.addEventListener("click", () => {
+settingsForm?.addEventListener("submit", handleSettingsSubmit);
+resetSettings?.addEventListener("click", () => {
   state.settings = { ...DEFAULT_SETTINGS };
   state.activeDate = null;
   state.selectedSlot = null;
@@ -467,9 +595,13 @@ viewButtons.forEach((button) => {
   button.addEventListener("click", () => {
     const view = button.dataset.view;
 
-    bookingView.hidden = view !== "booking";
-    adminView.hidden = view !== "admin";
-    settingsView.hidden = view !== "settings";
+    if (adminView) {
+      adminView.hidden = view !== "admin";
+    }
+    if (settingsView) {
+      settingsView.hidden = view !== "settings";
+    }
+
     viewButtons.forEach((item) => item.classList.toggle("active", item === button));
   });
 });
