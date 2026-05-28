@@ -62,6 +62,10 @@
                 <span><i class="dot booked"></i>занято</span>
               </div>
             </div>
+            <label class="instructor-filter">
+              Инструктор
+              <select id="studentInstructorFilter" name="studentInstructorFilter"></select>
+            </label>
             <div class="day-tabs" id="dayTabs" role="tablist" aria-label="Дни занятий"></div>
             <div class="slot-grid" id="slotGrid" aria-live="polite"></div>
           </section>
@@ -82,22 +86,80 @@
         <form class="login-form" id="loginForm">
           <div>
             <p class="eyebrow">Личный кабинет</p>
-            <h1 id="login-title">Введите логин и пароль</h1>
+            <h1 id="login-title">Войти как инструктор</h1>
           </div>
 
           <label>
             Логин
-            <input id="loginName" name="loginName" autocomplete="username" required placeholder="instructor" />
+            <input id="loginName" name="loginName" autocomplete="username" required placeholder="ivanov" />
           </label>
 
           <label>
             Пароль
-            <input id="loginPassword" name="loginPassword" autocomplete="current-password" type="password" required placeholder="1234" />
+            <input id="loginPassword" name="loginPassword" autocomplete="current-password" type="password" required placeholder="Пароль" />
           </label>
 
-          <button class="primary-action" type="submit">Войти</button>
-          <p class="form-note muted-note">Тестовый доступ: instructor / 1234</p>
+          <div class="settings-actions">
+            <button class="primary-action" type="submit">Войти</button>
+            <button id="showRegister" type="button">Создать кабинет</button>
+          </div>
+          <p class="form-note muted-note">Кабинет создается один раз, затем входите по своему логину и паролю.</p>
           <p class="form-note" id="loginNote" role="status"></p>
+        </form>
+
+        <form class="login-form" id="registerForm" hidden>
+          <div>
+            <p class="eyebrow">Регистрация</p>
+            <h1 id="register-title">Создать кабинет инструктора</h1>
+          </div>
+
+          <div class="settings-grid two-column">
+            <label>
+              Фамилия
+              <input id="registerLastName" name="lastName" autocomplete="family-name" required placeholder="Иванов" />
+            </label>
+
+            <label>
+              Имя
+              <input id="registerFirstName" name="firstName" autocomplete="given-name" required placeholder="Иван" />
+            </label>
+          </div>
+
+          <label>
+            Отчество
+            <input id="registerPatronymic" name="patronymic" autocomplete="additional-name" placeholder="Петрович" />
+          </label>
+
+          <div class="settings-grid two-column">
+            <label>
+              Телефон
+              <input id="registerPhone" name="phone" autocomplete="tel" inputmode="tel" placeholder="+7 900 000-00-00" />
+            </label>
+
+            <label>
+              Email
+              <input id="registerEmail" name="email" autocomplete="email" inputmode="email" type="email" placeholder="name@example.com" />
+            </label>
+          </div>
+
+          <div class="settings-grid two-column">
+            <label>
+              Логин
+              <input id="registerLogin" name="registerLogin" autocomplete="username" required placeholder="ivanov" />
+            </label>
+
+            <label>
+              Пароль
+              <input id="registerPassword" name="registerPassword" autocomplete="new-password" type="password" required placeholder="Минимум 4 символа" />
+            </label>
+          </div>
+
+          <div class="settings-actions">
+            <button class="primary-action" type="submit">Зарегистрироваться</button>
+            <button id="showLogin" type="button">Уже есть кабинет</button>
+          </div>
+          <p class="form-note muted-note">Пока данные хранятся в браузере этого устройства. Для настоящей базы подключим backend следующим шагом.</p>
+          <p class="form-note" id="registerNote" role="status"></p>
         </form>
       </section>
 
@@ -106,6 +168,7 @@
           <div>
             <p class="eyebrow">DriveBook</p>
             <strong>Кабинет инструктора</strong>
+            <span class="current-instructor" id="currentInstructorName"></span>
           </div>
           <nav class="view-switch instructor-switch" aria-label="Разделы кабинета">
             <button class="active" type="button" data-view="admin">Журнал</button>
@@ -242,15 +305,6 @@
             </div>
 
             <label>
-              Инструктор
-              <select id="instructor" name="instructor">
-                <option value="Марина Соколова">Марина Соколова</option>
-                <option value="Любой свободный инструктор">Любой свободный инструктор</option>
-                <option value="Алексей Волков">Алексей Волков</option>
-              </select>
-            </label>
-
-            <label>
               Комментарий
               <textarea id="comment" name="comment" rows="3" placeholder="Опыт, район, пожелания"></textarea>
             </label>
@@ -291,11 +345,7 @@
               </label>
               <label>
                 Инструктор
-                <select id="editInstructor" name="editInstructor">
-                  <option value="Марина Соколова">Марина Соколова</option>
-                  <option value="Любой свободный инструктор">Любой свободный инструктор</option>
-                  <option value="Алексей Волков">Алексей Волков</option>
-                </select>
+                <select id="editInstructor" name="editInstructor" required></select>
               </label>
             </div>
 

@@ -1,9 +1,10 @@
 const STORAGE_KEY = "drivingLessonBookings";
 const SETTINGS_KEY = "drivingLessonSettings";
+const INSTRUCTORS_KEY = "drivingLessonInstructors";
 const INSTRUCTOR_SESSION_KEY = "driveBookInstructorSession";
-const INSTRUCTOR_LOGIN = "instructor";
-const INSTRUCTOR_PASSWORD = "1234";
+const ANY_INSTRUCTOR_ID = "any";
 const DAY_COUNT = 7;
+const DRAWER_TRANSITION_MS = 300;
 const DEFAULT_SETTINGS = {
   workDays: [1, 2, 3, 4, 5, 6],
   startTime: "09:00",
@@ -15,9 +16,11 @@ const WEEKDAY_NAMES = ["Вс", "Пн", "Вт", "Ср", "Чт", "Пт", "Сб"];
 const state = {
   activeDate: null,
   selectedSlot: null,
+  selectedInstructorId: ANY_INSTRUCTOR_ID,
   editingId: null,
   bookings: loadBookings(),
-  settings: loadSettings(),
+  instructors: loadInstructors(),
+  currentInstructorId: localStorage.getItem(INSTRUCTOR_SESSION_KEY),
 };
 
 const roleView = document.querySelector("#roleView");
@@ -25,11 +28,17 @@ const studentEntry = document.querySelector("#studentEntry");
 const instructorEntry = document.querySelector("#instructorEntry");
 const instructorLoginView = document.querySelector("#instructorLoginView");
 const loginForm = document.querySelector("#loginForm");
+const registerForm = document.querySelector("#registerForm");
+const showRegister = document.querySelector("#showRegister");
+const showLogin = document.querySelector("#showLogin");
 const loginNote = document.querySelector("#loginNote");
+const registerNote = document.querySelector("#registerNote");
 const instructorShell = document.querySelector("#instructorShell");
+const currentInstructorName = document.querySelector("#currentInstructorName");
 const logoutInstructor = document.querySelector("#logoutInstructor");
 const backHomeButtons = document.querySelectorAll("[data-back-home]");
 const bookingView = document.querySelector("#bookingView");
+const studentInstructorFilter = document.querySelector("#studentInstructorFilter");
 const dayTabs = document.querySelector("#dayTabs");
 const slotGrid = document.querySelector("#slotGrid");
 const bookingDrawer = document.querySelector("#bookingDrawer");
@@ -81,7 +90,7 @@ function loadBookings() {
   }
 }
 
-function loadSettings() {
+function loadLegacySettings() {
   try {
     const saved = JSON.parse(localStorage.getItem(SETTINGS_KEY));
     return normalizeSettings(saved);
@@ -90,25 +99,21 @@ function loadSettings() {
   }
 }
 
+function loadInstructors() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(INSTRUCTORS_KEY)) ?? [];
+    return saved.map(normalizeInstructor).filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
 function saveBookings() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state.bookings));
 }
 
-function saveSettings() {
-  localStorage.setItem(SETTINGS_KEY, JSON.stringify(state.settings));
-}
-
-function hasInstructorSession() {
-  return localStorage.getItem(INSTRUCTOR_SESSION_KEY) === "true";
-}
-
-function setInstructorSession(value) {
-  if (value) {
-    localStorage.setItem(INSTRUCTOR_SESSION_KEY, "true");
-    return;
-  }
-
-  localStorage.removeItem(INSTRUCTOR_SESSION_KEY);
+function saveInstructors() {
+  localStorage.setItem(INSTRUCTORS_KEY, JSON.stringify(state.instructors));
 }
 
 function normalizeSettings(settings) {
@@ -129,11 +134,117 @@ function normalizeSettings(settings) {
   return next;
 }
 
+function normalizeLogin(value) {
+  return String(value ?? "").trim().toLowerCase();
+}
+
+function normalizeInstructor(instructor) {
+  if (!instructor || typeof instructor !== "object") {
+    return null;
+  }
+
+  const login = normalizeLogin(instructor.login);
+  const firstName = String(instructor.firstName ?? "").trim();
+  const lastName = String(instructor.lastName ?? "").trim();
+
+  if (!login || !firstName || !lastName) {
+    return null;
+  }
+
+  return {
+    id: String(instructor.id ?? createId("instructor")),
+    firstName,
+    lastName,
+    patronymic: String(instructor.patronymic ?? "").trim(),
+    phone: String(instructor.phone ?? "").trim(),
+    email: String(instructor.email ?? "").trim(),
+    login,
+    password: String(instructor.password ?? ""),
+    schedule: normalizeSettings(instructor.schedule),
+    createdAt: instructor.createdAt ?? new Date().toISOString(),
+  };
+}
+
+function hasInstructorSession() {
+  return Boolean(getCurrentInstructor());
+}
+
+function setInstructorSession(instructorId) {
+  state.currentInstructorId = instructorId || null;
+
+  if (instructorId) {
+    localStorage.setItem(INSTRUCTOR_SESSION_KEY, instructorId);
+    return;
+  }
+
+  localStorage.removeItem(INSTRUCTOR_SESSION_KEY);
+}
+
+function getCurrentInstructor() {
+  return state.instructors.find((instructor) => instructor.id === state.currentInstructorId) ?? null;
+}
+
+function getInstructorById(instructorId) {
+  return state.instructors.find((instructor) => instructor.id === instructorId) ?? null;
+}
+
+function getInstructorByLogin(login) {
+  const normalizedLogin = normalizeLogin(login);
+  return state.instructors.find((instructor) => instructor.login === normalizedLogin) ?? null;
+}
+
+function getInstructorName(instructor) {
+  if (!instructor) {
+    return "Инструктор не назначен";
+  }
+
+  return [instructor.lastName, instructor.firstName, instructor.patronymic]
+    .filter(Boolean)
+    .join(" ");
+}
+
+function getBookingInstructorId(booking) {
+  if (booking.instructorId) {
+    return booking.instructorId;
+  }
+
+  const legacyName = booking.instructorName ?? booking.instructor;
+  const matchedInstructor = state.instructors.find((instructor) => getInstructorName(instructor) === legacyName);
+  return matchedInstructor?.id ?? null;
+}
+
+function getBookingInstructorName(booking) {
+  const instructor = getInstructorById(getBookingInstructorId(booking));
+  return booking.instructorName ?? (instructor ? getInstructorName(instructor) : booking.instructor) ?? "Инструктор не назначен";
+}
+
+function getCurrentInstructorBookings() {
+  const currentInstructor = getCurrentInstructor();
+  if (!currentInstructor) {
+    return [];
+  }
+
+  return state.bookings.filter((booking) => getBookingInstructorId(booking) === currentInstructor.id);
+}
+
 function toDateKey(date) {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, "0");
   const day = String(date.getDate()).padStart(2, "0");
   return `${year}-${month}-${day}`;
+}
+
+function getDateFromKey(dateKey) {
+  const [year, month, day] = dateKey.split("-").map(Number);
+  return new Date(year, month - 1, day);
+}
+
+function getStudentInstructorCandidates() {
+  if (state.selectedInstructorId === ANY_INSTRUCTOR_ID) {
+    return state.instructors;
+  }
+
+  return [getInstructorById(state.selectedInstructorId)].filter(Boolean);
 }
 
 function getDays() {
@@ -146,7 +257,8 @@ function getDays() {
     candidate.setDate(date.getDate() + offset);
     offset += 1;
 
-    if (state.settings.workDays.includes(candidate.getDay())) {
+    const dateKey = toDateKey(candidate);
+    if (getStudentInstructorCandidates().some((instructor) => isInstructorWorkingOnDate(instructor, dateKey))) {
       days.push(candidate);
     }
   }
@@ -165,10 +277,11 @@ function minutesToTime(value) {
   return `${hours}:${minutes}`;
 }
 
-function getWorkHours() {
-  const start = timeToMinutes(state.settings.startTime);
-  const end = timeToMinutes(state.settings.endTime);
-  const duration = state.settings.lessonDuration;
+function getWorkHours(settings) {
+  const schedule = normalizeSettings(settings);
+  const start = timeToMinutes(schedule.startTime);
+  const end = timeToMinutes(schedule.endTime);
+  const duration = schedule.lessonDuration;
   const slots = [];
 
   for (let time = start; time + duration <= end; time += duration) {
@@ -178,16 +291,91 @@ function getWorkHours() {
   return slots;
 }
 
+function isInstructorWorkingOnDate(instructor, dateKey) {
+  const date = getDateFromKey(dateKey);
+  return instructor.schedule.workDays.includes(date.getDay());
+}
+
+function isSlotInSchedule(instructor, dateKey, time) {
+  return isInstructorWorkingOnDate(instructor, dateKey) && getWorkHours(instructor.schedule).includes(time);
+}
+
+function isSlotBooked(dateKey, time, instructorId, ignoredId = null) {
+  return state.bookings.some((booking) => (
+    booking.id !== ignoredId
+    && booking.date === dateKey
+    && booking.time === time
+    && getBookingInstructorId(booking) === instructorId
+  ));
+}
+
+function countInstructorBookings(instructorId, dateKey) {
+  return state.bookings.filter((booking) => (
+    booking.date === dateKey && getBookingInstructorId(booking) === instructorId
+  )).length;
+}
+
+function findAvailableInstructorForSlot(dateKey, time, requestedInstructorId = state.selectedInstructorId, ignoredId = null) {
+  const candidates = requestedInstructorId === ANY_INSTRUCTOR_ID
+    ? state.instructors
+    : [getInstructorById(requestedInstructorId)].filter(Boolean);
+
+  return candidates
+    .filter((instructor) => (
+      isSlotInSchedule(instructor, dateKey, time)
+      && !isSlotBooked(dateKey, time, instructor.id, ignoredId)
+    ))
+    .sort((a, b) => countInstructorBookings(a.id, dateKey) - countInstructorBookings(b.id, dateKey))
+    .at(0) ?? null;
+}
+
+function getStudentSlotTimes(dateKey) {
+  if (!dateKey) {
+    return [];
+  }
+
+  const slots = new Set();
+  getStudentInstructorCandidates().forEach((instructor) => {
+    if (!isInstructorWorkingOnDate(instructor, dateKey)) {
+      return;
+    }
+
+    getWorkHours(instructor.schedule).forEach((time) => slots.add(time));
+  });
+
+  return [...slots].sort((a, b) => timeToMinutes(a) - timeToMinutes(b));
+}
+
 function formatSlot(dateKey, time) {
-  const [year, month, day] = dateKey.split("-").map(Number);
-  const date = new Date(year, month - 1, day);
+  const date = getDateFromKey(dateKey);
   return `${fullDateFormatter.format(date)}, ${time}`;
 }
 
-function isSlotBooked(dateKey, time, ignoredId = null) {
-  return state.bookings.some((booking) => (
-    booking.id !== ignoredId && booking.date === dateKey && booking.time === time
-  ));
+function renderStudentInstructorFilter() {
+  if (!studentInstructorFilter) return;
+
+  const hasInstructors = state.instructors.length > 0;
+
+  if (!hasInstructors) {
+    state.selectedInstructorId = ANY_INSTRUCTOR_ID;
+    studentInstructorFilter.disabled = true;
+    studentInstructorFilter.innerHTML = `<option value="${ANY_INSTRUCTOR_ID}">Пока нет зарегистрированных инструкторов</option>`;
+    return;
+  }
+
+  const selectedExists = state.selectedInstructorId === ANY_INSTRUCTOR_ID || state.instructors.some((instructor) => instructor.id === state.selectedInstructorId);
+  if (!selectedExists) {
+    state.selectedInstructorId = ANY_INSTRUCTOR_ID;
+  }
+
+  studentInstructorFilter.disabled = false;
+  studentInstructorFilter.innerHTML = [
+    `<option value="${ANY_INSTRUCTOR_ID}">Любой свободный инструктор</option>`,
+    ...state.instructors.map((instructor) => (
+      `<option value="${escapeHtml(instructor.id)}">${escapeHtml(getInstructorName(instructor))}</option>`
+    )),
+  ].join("");
+  studentInstructorFilter.value = state.selectedInstructorId;
 }
 
 function renderDays() {
@@ -195,6 +383,13 @@ function renderDays() {
 
   const days = getDays();
   const visibleDates = days.map(toDateKey);
+
+  if (days.length === 0) {
+    state.activeDate = null;
+    state.selectedSlot = null;
+    dayTabs.innerHTML = "";
+    return;
+  }
 
   if (!visibleDates.includes(state.activeDate)) {
     state.activeDate = toDateKey(days[0]);
@@ -218,16 +413,32 @@ function renderDays() {
 function renderSlots() {
   if (!slotGrid) return;
 
-  const slots = getWorkHours();
+  if (state.instructors.length === 0) {
+    slotGrid.innerHTML = `<p class="empty-state">Пока нет зарегистрированных инструкторов. Инструктор должен сначала создать кабинет и настроить расписание.</p>`;
+    return;
+  }
+
+  const selectedInstructor = state.selectedInstructorId === ANY_INSTRUCTOR_ID
+    ? null
+    : getInstructorById(state.selectedInstructorId);
+
+  if (state.selectedInstructorId !== ANY_INSTRUCTOR_ID && !selectedInstructor) {
+    slotGrid.innerHTML = `<p class="empty-state">Этот инструктор больше не найден. Выберите другого инструктора.</p>`;
+    return;
+  }
+
+  const slots = getStudentSlotTimes(state.activeDate);
 
   if (slots.length === 0) {
-    slotGrid.innerHTML = `<p class="empty-state">В настройках нет доступного времени. Инструктор должен изменить расписание.</p>`;
+    slotGrid.innerHTML = `<p class="empty-state">Для выбранного инструктора пока нет доступных дней и времени.</p>`;
     return;
   }
 
   slotGrid.innerHTML = slots.map((time) => {
-    const booked = isSlotBooked(state.activeDate, time);
+    const availableInstructor = findAvailableInstructorForSlot(state.activeDate, time);
+    const booked = !availableInstructor;
     const selected = state.selectedSlot?.date === state.activeDate && state.selectedSlot?.time === time;
+    const duration = availableInstructor?.schedule.lessonDuration ?? selectedInstructor?.schedule.lessonDuration ?? DEFAULT_SETTINGS.lessonDuration;
     return `
       <button
         class="slot-button ${selected ? "selected" : ""}"
@@ -237,7 +448,7 @@ function renderSlots() {
         aria-pressed="${selected}"
       >
         <strong>${time}</strong>
-        <span>${booked ? "уже занято" : `${state.settings.lessonDuration} минут`}</span>
+        <span>${booked ? "уже занято" : `${duration} минут`}</span>
       </button>
     `;
   }).join("");
@@ -252,17 +463,23 @@ function renderSelectedSlot() {
     return;
   }
 
-  selectedSlot.textContent = formatSlot(state.selectedSlot.date, state.selectedSlot.time);
+  const instructor = state.selectedSlot.requestedInstructorId === ANY_INSTRUCTOR_ID
+    ? null
+    : getInstructorById(state.selectedSlot.requestedInstructorId);
+  const instructorLabel = instructor ? getInstructorName(instructor) : "любой свободный инструктор";
+
+  selectedSlot.textContent = `${formatSlot(state.selectedSlot.date, state.selectedSlot.time)} · ${instructorLabel}`;
   selectedSlot.classList.add("ready");
 }
 
 function renderBookings() {
   if (!bookingList) return;
 
-  const bookings = [...state.bookings].sort((a, b) => `${a.date} ${a.time}`.localeCompare(`${b.date} ${b.time}`));
+  const bookings = getCurrentInstructorBookings()
+    .sort((a, b) => `${a.date} ${a.time}`.localeCompare(`${b.date} ${b.time}`));
 
   if (bookings.length === 0) {
-    bookingList.innerHTML = `<p class="empty-state">Пока нет заявок. Новые записи появятся здесь после отправки учеником формы.</p>`;
+    bookingList.innerHTML = `<p class="empty-state">Пока нет заявок. Здесь будут только ученики, записанные к вам.</p>`;
     return;
   }
 
@@ -271,7 +488,7 @@ function renderBookings() {
       <article class="booking-card ${state.editingId === booking.id ? "editing" : ""}">
         <div>
           <p class="booking-time">${formatSlot(booking.date, booking.time)}</p>
-          <p>${escapeHtml(booking.instructor)}</p>
+          <p>${escapeHtml(getBookingInstructorName(booking))}</p>
         </div>
         <div>
           <h3>${escapeHtml(booking.name)}</h3>
@@ -290,22 +507,55 @@ function renderBookings() {
     .join("");
 }
 
+function renderCurrentInstructorName() {
+  if (!currentInstructorName) return;
+
+  const instructor = getCurrentInstructor();
+  currentInstructorName.textContent = instructor ? getInstructorName(instructor) : "";
+}
+
 function renderSettingsForm() {
   if (!settingsForm || !settingsSummary) return;
 
-  settingsForm.startTime.value = state.settings.startTime;
-  settingsForm.endTime.value = state.settings.endTime;
-  settingsForm.lessonDuration.value = String(state.settings.lessonDuration);
+  const instructor = getCurrentInstructor();
+
+  if (!instructor) {
+    settingsForm.reset();
+    settingsSummary.textContent = "Войдите в кабинет инструктора, чтобы настроить расписание.";
+    return;
+  }
+
+  const settings = instructor.schedule;
+  settingsForm.startTime.value = settings.startTime;
+  settingsForm.endTime.value = settings.endTime;
+  settingsForm.lessonDuration.value = String(settings.lessonDuration);
 
   settingsForm.querySelectorAll("[name='workDays']").forEach((input) => {
-    input.checked = state.settings.workDays.includes(Number(input.value));
+    input.checked = settings.workDays.includes(Number(input.value));
   });
 
-  const days = state.settings.workDays
+  const days = settings.workDays
     .map((day) => WEEKDAY_NAMES[day])
     .join(", ");
-  const slotCount = getWorkHours().length;
-  settingsSummary.textContent = `Рабочие дни: ${days}. Время: ${state.settings.startTime}-${state.settings.endTime}. Длительность: ${state.settings.lessonDuration} минут. Слотов в день: ${slotCount}.`;
+  const slotCount = getWorkHours(settings).length;
+  settingsSummary.textContent = `Рабочие дни: ${days}. Время: ${settings.startTime}-${settings.endTime}. Длительность: ${settings.lessonDuration} минут. Слотов в день: ${slotCount}.`;
+}
+
+function renderEditInstructorOptions(selectedInstructorId) {
+  if (!bookingEditForm?.editInstructor) return;
+
+  if (state.instructors.length === 0) {
+    bookingEditForm.editInstructor.innerHTML = `<option value="">Нет зарегистрированных инструкторов</option>`;
+    return;
+  }
+
+  bookingEditForm.editInstructor.innerHTML = state.instructors
+    .map((instructor) => (
+      `<option value="${escapeHtml(instructor.id)}">${escapeHtml(getInstructorName(instructor))}</option>`
+    ))
+    .join("");
+
+  bookingEditForm.editInstructor.value = selectedInstructorId;
 }
 
 function renderEditForm() {
@@ -313,44 +563,74 @@ function renderEditForm() {
 
   const booking = state.bookings.find((item) => item.id === state.editingId);
 
-  if (editDrawer) {
-    editDrawer.hidden = !booking;
-  }
-
   if (!booking) {
     bookingEditForm.reset();
+    renderEditInstructorOptions("");
     return;
   }
 
+  const instructorId = getBookingInstructorId(booking) ?? getCurrentInstructor()?.id ?? "";
+  renderEditInstructorOptions(instructorId);
+
   bookingEditForm.editDate.value = booking.date;
   bookingEditForm.editTime.value = booking.time;
-  bookingEditForm.editInstructor.value = booking.instructor;
+  bookingEditForm.editInstructor.value = instructorId;
   bookingEditForm.editName.value = booking.name;
   bookingEditForm.editPhone.value = booking.phone;
-  bookingEditForm.editEmail.value = booking.email;
-  bookingEditForm.editComment.value = booking.comment;
-  bookingEditForm.editMailing.checked = booking.mailing;
+  bookingEditForm.editEmail.value = booking.email ?? "";
+  bookingEditForm.editComment.value = booking.comment ?? "";
+  bookingEditForm.editMailing.checked = Boolean(booking.mailing);
 }
 
 function render() {
+  renderStudentInstructorFilter();
   renderDays();
   renderSlots();
   renderSelectedSlot();
   renderBookings();
+  renderCurrentInstructorName();
   renderSettingsForm();
   renderEditForm();
 }
 
+function openDrawer(drawer, focusTarget) {
+  if (!drawer) return;
+
+  window.clearTimeout(drawer.closeTimer);
+  drawer.hidden = false;
+  window.requestAnimationFrame(() => {
+    drawer.classList.add("is-open");
+  });
+
+  if (focusTarget) {
+    window.setTimeout(() => focusTarget.focus(), 180);
+  }
+}
+
+function closeDrawer(drawer, afterClose) {
+  if (!drawer || drawer.hidden) {
+    afterClose?.();
+    return;
+  }
+
+  drawer.classList.remove("is-open");
+  window.clearTimeout(drawer.closeTimer);
+  drawer.closeTimer = window.setTimeout(() => {
+    if (!drawer.classList.contains("is-open")) {
+      drawer.hidden = true;
+      afterClose?.();
+    }
+  }, DRAWER_TRANSITION_MS);
+}
+
 function openBookingDrawer() {
-  if (!bookingDrawer) return;
-  bookingDrawer.hidden = false;
-  window.setTimeout(() => bookingForm?.studentName.focus(), 0);
+  openDrawer(bookingDrawer, bookingForm?.studentName);
 }
 
 function closeBookingDrawer() {
-  if (!bookingDrawer) return;
-  bookingDrawer.hidden = true;
-  showNote("");
+  closeDrawer(bookingDrawer, () => {
+    showNote("");
+  });
 }
 
 function hideBookingSuccess() {
@@ -364,7 +644,7 @@ function showBookingSuccess(booking) {
 
   bookingSuccess.innerHTML = `
     <strong>Вы успешно записаны на занятие.</strong>
-    <span>${formatSlot(booking.date, booking.time)} · ${escapeHtml(booking.instructor)}</span>
+    <span>${formatSlot(booking.date, booking.time)} · ${escapeHtml(getBookingInstructorName(booking))}</span>
   `;
   bookingSuccess.hidden = false;
 }
@@ -385,6 +665,7 @@ function showAppScreen(screen) {
 
   if (screen !== "instructor") {
     state.editingId = null;
+    closeDrawer(editDrawer);
     renderEditForm();
   }
   if (screen !== "student") {
@@ -404,10 +685,34 @@ function showStudentBooking() {
   render();
 }
 
+function showLoginMode() {
+  if (loginForm) {
+    loginForm.hidden = false;
+  }
+  if (registerForm) {
+    registerForm.hidden = true;
+  }
+  showLoginNote("");
+  showRegisterNote("");
+  loginForm?.loginName.focus();
+}
+
+function showRegisterMode() {
+  if (loginForm) {
+    loginForm.hidden = true;
+  }
+  if (registerForm) {
+    registerForm.hidden = false;
+  }
+  showLoginNote("");
+  showRegisterNote("");
+  registerForm?.lastName.focus();
+}
+
 function showInstructorLogin() {
   window.history.replaceState(null, "", "index.html#instructor");
   showAppScreen("login");
-  loginForm?.loginName.focus();
+  showLoginMode();
 }
 
 function showInstructorDashboard() {
@@ -431,6 +736,7 @@ function openInstructorFlow() {
     return;
   }
 
+  setInstructorSession(null);
   showInstructorLogin();
 }
 
@@ -464,6 +770,12 @@ function showLoginNote(message, isError = false) {
   loginNote.classList.toggle("error", isError);
 }
 
+function showRegisterNote(message, isError = false) {
+  if (!registerNote) return;
+  registerNote.textContent = message;
+  registerNote.classList.toggle("error", isError);
+}
+
 function validatePhone(value) {
   const digits = value.replace(/\D/g, "");
   return digits.length >= 10;
@@ -477,7 +789,13 @@ function handleSubmit(event) {
     return;
   }
 
-  if (isSlotBooked(state.selectedSlot.date, state.selectedSlot.time)) {
+  const assignedInstructor = findAvailableInstructorForSlot(
+    state.selectedSlot.date,
+    state.selectedSlot.time,
+    state.selectedSlot.requestedInstructorId,
+  );
+
+  if (!assignedInstructor) {
     showNote("Это время уже заняли. Выберите другой слот.", true);
     state.selectedSlot = null;
     render();
@@ -494,14 +812,17 @@ function handleSubmit(event) {
     return;
   }
 
+  const instructorName = getInstructorName(assignedInstructor);
   const booking = {
-    id: createId(),
+    id: createId("booking"),
     date: state.selectedSlot.date,
     time: state.selectedSlot.time,
     name,
     phone,
     email,
-    instructor: formData.get("instructor"),
+    instructorId: assignedInstructor.id,
+    instructorName,
+    instructor: instructorName,
     comment: formData.get("comment").trim(),
     mailing: formData.get("mailing") === "on",
     createdAt: new Date().toISOString(),
@@ -516,25 +837,28 @@ function handleSubmit(event) {
   showBookingSuccess(booking);
 }
 
-function createId() {
+function createId(prefix = "item") {
   if (window.crypto?.randomUUID) {
-    return window.crypto.randomUUID();
+    return `${prefix}-${window.crypto.randomUUID()}`;
   }
 
-  return `booking-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  return `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
 
 function startEditBooking(id) {
   state.editingId = id;
   showEditNote("");
   render();
-  window.setTimeout(() => bookingEditForm?.editName.focus(), 0);
+  openDrawer(editDrawer, bookingEditForm?.editName);
 }
 
 function cancelEditBooking() {
   state.editingId = null;
   showEditNote("");
-  render();
+  renderBookings();
+  closeDrawer(editDrawer, () => {
+    renderEditForm();
+  });
 }
 
 function updateBooking(event) {
@@ -546,27 +870,42 @@ function updateBooking(event) {
   const formData = new FormData(bookingEditForm);
   const date = formData.get("editDate");
   const time = formData.get("editTime");
+  const instructorId = formData.get("editInstructor");
+  const instructor = getInstructorById(instructorId);
   const name = formData.get("editName").trim();
   const phone = formData.get("editPhone").trim();
   const email = formData.get("editEmail").trim();
+
+  if (!instructor) {
+    showEditNote("Выберите зарегистрированного инструктора.", true);
+    return;
+  }
 
   if (!validatePhone(phone)) {
     showEditNote("Проверьте телефон: нужно минимум 10 цифр.", true);
     return;
   }
 
-  if (isSlotBooked(date, time, booking.id)) {
+  if (!isSlotInSchedule(instructor, date, time)) {
+    showEditNote("У этого инструктора нет такого времени в расписании.", true);
+    return;
+  }
+
+  if (isSlotBooked(date, time, instructor.id, booking.id)) {
     showEditNote("На это время уже есть другая заявка.", true);
     return;
   }
 
+  const instructorName = getInstructorName(instructor);
   Object.assign(booking, {
     date,
     time,
     name,
     phone,
     email,
-    instructor: formData.get("editInstructor"),
+    instructorId: instructor.id,
+    instructorName,
+    instructor: instructorName,
     comment: formData.get("editComment").trim(),
     mailing: formData.get("editMailing") === "on",
     updatedAt: new Date().toISOString(),
@@ -576,13 +915,23 @@ function updateBooking(event) {
   state.editingId = null;
   showAdminNote("Заявка обновлена.");
   render();
+  closeDrawer(editDrawer);
 }
 
 function deleteBooking(id) {
-  state.bookings = state.bookings.filter((booking) => booking.id !== id);
+  const booking = state.bookings.find((item) => item.id === id);
+  const currentInstructor = getCurrentInstructor();
+
+  if (!booking || !currentInstructor || getBookingInstructorId(booking) !== currentInstructor.id) {
+    showAdminNote("Эта заявка не относится к текущему инструктору.", true);
+    return;
+  }
+
+  state.bookings = state.bookings.filter((item) => item.id !== id);
 
   if (state.editingId === id) {
     state.editingId = null;
+    closeDrawer(editDrawer);
   }
 
   saveBookings();
@@ -600,20 +949,22 @@ function escapeHtml(value) {
 }
 
 function exportBookings() {
-  if (state.bookings.length === 0) {
+  const bookings = getCurrentInstructorBookings();
+
+  if (bookings.length === 0) {
     showAdminNote("Экспортировать пока нечего.", true);
     return;
   }
 
   const rows = [
     ["Дата", "Время", "Имя", "Телефон", "Email", "Инструктор", "Рассылка", "Комментарий", "Создано", "Обновлено"],
-    ...state.bookings.map((booking) => [
+    ...bookings.map((booking) => [
       booking.date,
       booking.time,
       booking.name,
       booking.phone,
       booking.email,
-      booking.instructor,
+      getBookingInstructorName(booking),
       booking.mailing ? "да" : "нет",
       booking.comment,
       booking.createdAt,
@@ -632,6 +983,12 @@ function exportBookings() {
 
 function handleSettingsSubmit(event) {
   event.preventDefault();
+
+  const instructor = getCurrentInstructor();
+  if (!instructor) {
+    showSettingsNote("Сначала войдите в кабинет инструктора.", true);
+    return;
+  }
 
   const formData = new FormData(settingsForm);
   const workDays = formData.getAll("workDays").map(Number);
@@ -654,7 +1011,7 @@ function handleSettingsSubmit(event) {
     return;
   }
 
-  state.settings = normalizeSettings({
+  instructor.schedule = normalizeSettings({
     workDays,
     startTime,
     endTime,
@@ -662,7 +1019,7 @@ function handleSettingsSubmit(event) {
   });
   state.activeDate = null;
   state.selectedSlot = null;
-  saveSettings();
+  saveInstructors();
   showSettingsNote("Расписание сохранено. Страница ученика обновится при открытии.");
   render();
 }
@@ -673,25 +1030,91 @@ function handleLogin(event) {
   const formData = new FormData(loginForm);
   const login = formData.get("loginName").trim();
   const password = formData.get("loginPassword").trim();
+  const instructor = getInstructorByLogin(login);
 
-  if (login !== INSTRUCTOR_LOGIN || password !== INSTRUCTOR_PASSWORD) {
+  if (!instructor || instructor.password !== password) {
     showLoginNote("Неверный логин или пароль.", true);
     return;
   }
 
-  setInstructorSession(true);
+  setInstructorSession(instructor.id);
   loginForm.reset();
   showLoginNote("");
+  showInstructorDashboard();
+}
+
+function handleRegister(event) {
+  event.preventDefault();
+
+  const formData = new FormData(registerForm);
+  const firstName = formData.get("firstName").trim();
+  const lastName = formData.get("lastName").trim();
+  const patronymic = formData.get("patronymic").trim();
+  const phone = formData.get("phone").trim();
+  const email = formData.get("email").trim();
+  const login = normalizeLogin(formData.get("registerLogin"));
+  const password = formData.get("registerPassword").trim();
+
+  if (!firstName || !lastName || !login || !password) {
+    showRegisterNote("Заполните имя, фамилию, логин и пароль.", true);
+    return;
+  }
+
+  if (password.length < 4) {
+    showRegisterNote("Пароль должен быть не короче 4 символов.", true);
+    return;
+  }
+
+  if (phone && !validatePhone(phone)) {
+    showRegisterNote("Проверьте телефон: нужно минимум 10 цифр.", true);
+    return;
+  }
+
+  if (getInstructorByLogin(login)) {
+    showRegisterNote("Такой логин уже занят.", true);
+    return;
+  }
+
+  const instructor = {
+    id: createId("instructor"),
+    firstName,
+    lastName,
+    patronymic,
+    phone,
+    email,
+    login,
+    password,
+    schedule: loadLegacySettings(),
+    createdAt: new Date().toISOString(),
+  };
+
+  state.instructors.push(instructor);
+  saveInstructors();
+  setInstructorSession(instructor.id);
+  registerForm.reset();
+  showRegisterNote("");
   showInstructorDashboard();
 }
 
 studentEntry?.addEventListener("click", showStudentBooking);
 instructorEntry?.addEventListener("click", openInstructorFlow);
 backHomeButtons.forEach((button) => button.addEventListener("click", showRoleChoice));
+showRegister?.addEventListener("click", showRegisterMode);
+showLogin?.addEventListener("click", showLoginMode);
 loginForm?.addEventListener("submit", handleLogin);
+registerForm?.addEventListener("submit", handleRegister);
 logoutInstructor?.addEventListener("click", () => {
-  setInstructorSession(false);
+  setInstructorSession(null);
   showRoleChoice();
+});
+
+studentInstructorFilter?.addEventListener("change", () => {
+  state.selectedInstructorId = studentInstructorFilter.value;
+  state.activeDate = null;
+  state.selectedSlot = null;
+  hideBookingSuccess();
+  showNote("");
+  render();
 });
 
 dayTabs?.addEventListener("click", (event) => {
@@ -712,6 +1135,7 @@ slotGrid?.addEventListener("click", (event) => {
   state.selectedSlot = {
     date: state.activeDate,
     time: button.dataset.time,
+    requestedInstructorId: state.selectedInstructorId,
   };
   showNote("");
   hideBookingSuccess();
@@ -750,29 +1174,48 @@ editDrawer?.addEventListener("click", (event) => {
   }
 });
 document.addEventListener("keydown", (event) => {
-  if (event.key === "Escape" && state.editingId) {
+  if (event.key !== "Escape") {
+    return;
+  }
+
+  if (editDrawer?.classList.contains("is-open")) {
     cancelEditBooking();
   }
-  if (event.key === "Escape" && bookingDrawer && !bookingDrawer.hidden) {
+  if (bookingDrawer?.classList.contains("is-open")) {
     closeBookingDrawer();
   }
 });
 exportCsv?.addEventListener("click", exportBookings);
 clearDemo?.addEventListener("click", () => {
-  state.bookings = [];
+  const currentInstructor = getCurrentInstructor();
+
+  if (!currentInstructor) {
+    showAdminNote("Сначала войдите в кабинет инструктора.", true);
+    return;
+  }
+
+  state.bookings = state.bookings.filter((booking) => getBookingInstructorId(booking) !== currentInstructor.id);
   state.selectedSlot = null;
   state.editingId = null;
   saveBookings();
   showAdminNote("Журнал очищен.");
   render();
+  closeDrawer(editDrawer);
 });
 
 settingsForm?.addEventListener("submit", handleSettingsSubmit);
 resetSettings?.addEventListener("click", () => {
-  state.settings = { ...DEFAULT_SETTINGS };
+  const instructor = getCurrentInstructor();
+
+  if (!instructor) {
+    showSettingsNote("Сначала войдите в кабинет инструктора.", true);
+    return;
+  }
+
+  instructor.schedule = { ...DEFAULT_SETTINGS };
   state.activeDate = null;
   state.selectedSlot = null;
-  saveSettings();
+  saveInstructors();
   showSettingsNote("Настройки сброшены.");
   render();
 });
