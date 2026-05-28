@@ -1,11 +1,19 @@
 const STORAGE_KEY = "drivingLessonBookings";
-const WORK_HOURS = ["09:00", "11:00", "13:00", "15:00", "17:00"];
+const SETTINGS_KEY = "drivingLessonSettings";
 const DAY_COUNT = 7;
+const DEFAULT_SETTINGS = {
+  workDays: [1, 2, 3, 4, 5, 6],
+  startTime: "09:00",
+  endTime: "18:00",
+  lessonDuration: 60,
+};
+const WEEKDAY_NAMES = ["Вс", "Пн", "Вт", "Ср", "Чт", "Пт", "Сб"];
 
 const state = {
   activeDate: null,
   selectedSlot: null,
   bookings: loadBookings(),
+  settings: loadSettings(),
 };
 
 const dayTabs = document.querySelector("#dayTabs");
@@ -18,6 +26,11 @@ const exportCsv = document.querySelector("#exportCsv");
 const clearDemo = document.querySelector("#clearDemo");
 const bookingView = document.querySelector("#bookingView");
 const adminView = document.querySelector("#adminView");
+const settingsView = document.querySelector("#settingsView");
+const settingsForm = document.querySelector("#settingsForm");
+const settingsSummary = document.querySelector("#settingsSummary");
+const settingsNote = document.querySelector("#settingsNote");
+const resetSettings = document.querySelector("#resetSettings");
 const viewButtons = document.querySelectorAll("[data-view]");
 
 const dateFormatter = new Intl.DateTimeFormat("ru-RU", {
@@ -45,8 +58,39 @@ function loadBookings() {
   }
 }
 
+function loadSettings() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(SETTINGS_KEY));
+    return normalizeSettings(saved);
+  } catch {
+    return { ...DEFAULT_SETTINGS };
+  }
+}
+
 function saveBookings() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state.bookings));
+}
+
+function saveSettings() {
+  localStorage.setItem(SETTINGS_KEY, JSON.stringify(state.settings));
+}
+
+function normalizeSettings(settings) {
+  const next = {
+    ...DEFAULT_SETTINGS,
+    ...(settings ?? {}),
+  };
+
+  next.workDays = Array.isArray(next.workDays)
+    ? next.workDays.map(Number).filter((day) => day >= 0 && day <= 6)
+    : DEFAULT_SETTINGS.workDays;
+
+  if (next.workDays.length === 0) {
+    next.workDays = DEFAULT_SETTINGS.workDays;
+  }
+
+  next.lessonDuration = Number(next.lessonDuration) || DEFAULT_SETTINGS.lessonDuration;
+  return next;
 }
 
 function toDateKey(date) {
@@ -61,17 +105,41 @@ function getDays() {
   const date = new Date();
   let offset = 0;
 
-  while (days.length < DAY_COUNT) {
+  while (days.length < DAY_COUNT && offset < 60) {
     const candidate = new Date(date);
     candidate.setDate(date.getDate() + offset);
     offset += 1;
 
-    if (candidate.getDay() !== 0) {
+    if (state.settings.workDays.includes(candidate.getDay())) {
       days.push(candidate);
     }
   }
 
   return days;
+}
+
+function timeToMinutes(time) {
+  const [hours, minutes] = time.split(":").map(Number);
+  return hours * 60 + minutes;
+}
+
+function minutesToTime(value) {
+  const hours = String(Math.floor(value / 60)).padStart(2, "0");
+  const minutes = String(value % 60).padStart(2, "0");
+  return `${hours}:${minutes}`;
+}
+
+function getWorkHours() {
+  const start = timeToMinutes(state.settings.startTime);
+  const end = timeToMinutes(state.settings.endTime);
+  const duration = state.settings.lessonDuration;
+  const slots = [];
+
+  for (let time = start; time + duration <= end; time += duration) {
+    slots.push(minutesToTime(time));
+  }
+
+  return slots;
 }
 
 function formatSlot(dateKey, time) {
@@ -86,9 +154,11 @@ function isSlotBooked(dateKey, time) {
 
 function renderDays() {
   const days = getDays();
+  const visibleDates = days.map(toDateKey);
 
-  if (!state.activeDate) {
+  if (!visibleDates.includes(state.activeDate)) {
     state.activeDate = toDateKey(days[0]);
+    state.selectedSlot = null;
   }
 
   dayTabs.innerHTML = days
@@ -106,7 +176,14 @@ function renderDays() {
 }
 
 function renderSlots() {
-  slotGrid.innerHTML = WORK_HOURS.map((time) => {
+  const slots = getWorkHours();
+
+  if (slots.length === 0) {
+    slotGrid.innerHTML = `<p class="empty-state">В настройках нет доступного времени. Увеличьте рабочий день или уменьшите длительность занятия.</p>`;
+    return;
+  }
+
+  slotGrid.innerHTML = slots.map((time) => {
     const booked = isSlotBooked(state.activeDate, time);
     const selected = state.selectedSlot?.date === state.activeDate && state.selectedSlot?.time === time;
     return `
@@ -118,7 +195,7 @@ function renderSlots() {
         aria-pressed="${selected}"
       >
         <strong>${time}</strong>
-        <span>${booked ? "уже занято" : "60 минут"}</span>
+        <span>${booked ? "уже занято" : `${state.settings.lessonDuration} минут`}</span>
       </button>
     `;
   }).join("");
@@ -164,11 +241,28 @@ function renderBookings() {
     .join("");
 }
 
+function renderSettingsForm() {
+  settingsForm.startTime.value = state.settings.startTime;
+  settingsForm.endTime.value = state.settings.endTime;
+  settingsForm.lessonDuration.value = String(state.settings.lessonDuration);
+
+  settingsForm.querySelectorAll("[name='workDays']").forEach((input) => {
+    input.checked = state.settings.workDays.includes(Number(input.value));
+  });
+
+  const days = state.settings.workDays
+    .map((day) => WEEKDAY_NAMES[day])
+    .join(", ");
+  const slotCount = getWorkHours().length;
+  settingsSummary.textContent = `Рабочие дни: ${days}. Время: ${state.settings.startTime}-${state.settings.endTime}. Длительность: ${state.settings.lessonDuration} минут. Слотов в день: ${slotCount}.`;
+}
+
 function render() {
   renderDays();
   renderSlots();
   renderSelectedSlot();
   renderBookings();
+  renderSettingsForm();
 }
 
 function showNote(message, isError = false) {
@@ -280,6 +374,48 @@ function exportBookings() {
   URL.revokeObjectURL(link.href);
 }
 
+function handleSettingsSubmit(event) {
+  event.preventDefault();
+
+  const formData = new FormData(settingsForm);
+  const workDays = formData.getAll("workDays").map(Number);
+  const startTime = formData.get("startTime");
+  const endTime = formData.get("endTime");
+  const lessonDuration = Number(formData.get("lessonDuration"));
+
+  if (workDays.length === 0) {
+    showSettingsNote("Выберите хотя бы один рабочий день.", true);
+    return;
+  }
+
+  if (timeToMinutes(startTime) >= timeToMinutes(endTime)) {
+    showSettingsNote("Конец дня должен быть позже начала.", true);
+    return;
+  }
+
+  if (timeToMinutes(startTime) + lessonDuration > timeToMinutes(endTime)) {
+    showSettingsNote("Рабочий день короче одного занятия.", true);
+    return;
+  }
+
+  state.settings = normalizeSettings({
+    workDays,
+    startTime,
+    endTime,
+    lessonDuration,
+  });
+  state.activeDate = null;
+  state.selectedSlot = null;
+  saveSettings();
+  showSettingsNote("Расписание сохранено. Экран записи обновлен.");
+  render();
+}
+
+function showSettingsNote(message, isError = false) {
+  settingsNote.textContent = message;
+  settingsNote.classList.toggle("error", isError);
+}
+
 dayTabs.addEventListener("click", (event) => {
   const tab = event.target.closest("[data-date]");
   if (!tab) return;
@@ -317,12 +453,23 @@ clearDemo.addEventListener("click", () => {
   render();
 });
 
+settingsForm.addEventListener("submit", handleSettingsSubmit);
+resetSettings.addEventListener("click", () => {
+  state.settings = { ...DEFAULT_SETTINGS };
+  state.activeDate = null;
+  state.selectedSlot = null;
+  saveSettings();
+  showSettingsNote("Настройки сброшены.");
+  render();
+});
+
 viewButtons.forEach((button) => {
   button.addEventListener("click", () => {
-    const isAdmin = button.dataset.view === "admin";
+    const view = button.dataset.view;
 
-    bookingView.hidden = isAdmin;
-    adminView.hidden = !isAdmin;
+    bookingView.hidden = view !== "booking";
+    adminView.hidden = view !== "admin";
+    settingsView.hidden = view !== "settings";
     viewButtons.forEach((item) => item.classList.toggle("active", item === button));
   });
 });

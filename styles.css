@@ -60,8 +60,8 @@ button {
 
 .view-switch {
   display: inline-grid;
-  grid-template-columns: 1fr 1fr;
-  min-width: 220px;
+  grid-template-columns: repeat(3, 1fr);
+  min-width: 330px;
   padding: 4px;
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -260,6 +260,10 @@ button {
   gap: 10px;
 }
 
+.slot-grid .empty-state {
+  grid-column: 1 / -1;
+}
+
 .slot-button {
   min-height: 74px;
   padding: 12px;
@@ -304,6 +308,20 @@ button {
 form {
   display: grid;
   gap: 14px;
+}
+
+fieldset {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+legend {
+  margin-bottom: 10px;
+  color: var(--ink);
+  font-size: 0.92rem;
+  font-weight: 800;
 }
 
 label {
@@ -376,7 +394,8 @@ textarea:focus {
 
 .primary-action,
 .admin-actions button,
-.booking-card button {
+.booking-card button,
+.settings-actions button {
   min-height: 44px;
   border-radius: 8px;
   padding: 0 16px;
@@ -484,6 +503,73 @@ textarea:focus {
   color: var(--danger);
 }
 
+.settings-form {
+  max-width: 860px;
+}
+
+.weekday-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(70px, 1fr));
+  gap: 8px;
+}
+
+.check-tile {
+  display: block;
+  position: relative;
+}
+
+.check-tile input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.check-tile span {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 54px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--muted);
+  font-weight: 800;
+}
+
+.check-tile input:checked + span {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent-dark);
+}
+
+.settings-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(180px, 1fr));
+  gap: 14px;
+}
+
+.settings-summary {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 14px;
+  background: var(--surface-strong);
+  color: var(--muted);
+  font-weight: 700;
+  line-height: 1.45;
+}
+
+.settings-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.settings-actions button[type="button"] {
+  border: 1px solid var(--line);
+  background: #fff;
+  color: var(--ink);
+}
+
 @media (max-width: 940px) {
   .content-grid,
   .booking-card {
@@ -501,6 +587,11 @@ textarea:focus {
 
   .slot-grid {
     grid-template-columns: repeat(2, minmax(128px, 1fr));
+  }
+
+  .weekday-grid,
+  .settings-grid {
+    grid-template-columns: repeat(2, minmax(120px, 1fr));
   }
 }
 
@@ -543,7 +634,9 @@ textarea:focus {
   }
 
   .day-tabs,
-  .slot-grid {
+  .slot-grid,
+  .weekday-grid,
+  .settings-grid {
     grid-template-columns: 1fr 1fr;
   }
 }
