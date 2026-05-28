@@ -19,6 +19,10 @@
   box-sizing: border-box;
 }
 
+[hidden] {
+  display: none !important;
+}
+
 body {
   margin: 0;
   min-height: 100vh;
@@ -53,6 +57,19 @@ button {
   margin-bottom: 14px;
 }
 
+.inline-bar {
+  margin: 0;
+  padding: 18px 24px;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface);
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .top-bar strong {
   display: block;
   font-size: 1.05rem;
@@ -82,12 +99,71 @@ button {
 }
 
 .booking-board,
-.admin-panel {
+.admin-panel,
+.role-view,
+.login-panel {
   background: var(--surface);
   border: 1px solid var(--line);
   border-radius: 8px;
   box-shadow: var(--shadow);
   overflow: hidden;
+}
+
+.role-view {
+  display: grid;
+}
+
+.role-hero {
+  min-height: 340px;
+}
+
+.role-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(240px, 1fr));
+  gap: 14px;
+  padding: 28px;
+  background: var(--surface);
+}
+
+.role-card {
+  min-height: 170px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 22px;
+  background: #fff;
+  color: var(--ink);
+  text-align: left;
+}
+
+.role-card:hover {
+  border-color: var(--accent);
+  box-shadow: 0 12px 30px rgba(29, 43, 35, 0.1);
+}
+
+.role-card span,
+.role-card strong,
+.role-card small {
+  display: block;
+}
+
+.role-card span {
+  color: var(--accent);
+  font-size: 0.8rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.role-card strong {
+  margin-top: 10px;
+  font-size: 1.35rem;
+  line-height: 1.15;
+}
+
+.role-card small {
+  margin-top: 10px;
+  color: var(--muted);
+  font-size: 0.95rem;
+  line-height: 1.45;
 }
 
 .visual-panel {
@@ -438,6 +514,36 @@ textarea:focus {
   color: var(--ink);
 }
 
+.secondary-action {
+  min-height: 42px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0 14px;
+  background: #fff;
+  color: var(--ink);
+  font-weight: 800;
+}
+
+.login-panel {
+  padding: 0;
+}
+
+.login-form {
+  width: min(460px, 100%);
+  margin: 0 auto;
+  padding: 44px 28px 52px;
+}
+
+.login-form h1 {
+  margin: 0 0 20px;
+  font-size: 2rem;
+  line-height: 1.08;
+}
+
+.muted-note {
+  color: var(--muted);
+}
+
 .booking-list {
   display: grid;
   gap: 10px;
@@ -704,12 +810,18 @@ textarea:focus {
   .section-heading,
   .legend,
   .admin-actions,
-  .top-bar {
+  .top-bar,
+  .header-actions {
     flex-wrap: wrap;
   }
 
   .view-switch {
     width: 100%;
+  }
+
+  .role-actions {
+    grid-template-columns: 1fr;
+    padding: 18px;
   }
 
   .card-actions {

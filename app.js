@@ -1,5 +1,8 @@
 const STORAGE_KEY = "drivingLessonBookings";
 const SETTINGS_KEY = "drivingLessonSettings";
+const INSTRUCTOR_SESSION_KEY = "driveBookInstructorSession";
+const INSTRUCTOR_LOGIN = "instructor";
+const INSTRUCTOR_PASSWORD = "1234";
 const DAY_COUNT = 7;
 const DEFAULT_SETTINGS = {
   workDays: [1, 2, 3, 4, 5, 6],
@@ -17,6 +20,15 @@ const state = {
   settings: loadSettings(),
 };
 
+const roleView = document.querySelector("#roleView");
+const studentEntry = document.querySelector("#studentEntry");
+const instructorEntry = document.querySelector("#instructorEntry");
+const instructorLoginView = document.querySelector("#instructorLoginView");
+const loginForm = document.querySelector("#loginForm");
+const loginNote = document.querySelector("#loginNote");
+const instructorShell = document.querySelector("#instructorShell");
+const logoutInstructor = document.querySelector("#logoutInstructor");
+const backHomeButtons = document.querySelectorAll("[data-back-home]");
 const dayTabs = document.querySelector("#dayTabs");
 const slotGrid = document.querySelector("#slotGrid");
 const bookingForm = document.querySelector("#bookingForm");
@@ -79,6 +91,19 @@ function saveBookings() {
 
 function saveSettings() {
   localStorage.setItem(SETTINGS_KEY, JSON.stringify(state.settings));
+}
+
+function hasInstructorSession() {
+  return localStorage.getItem(INSTRUCTOR_SESSION_KEY) === "true";
+}
+
+function setInstructorSession(value) {
+  if (value) {
+    localStorage.setItem(INSTRUCTOR_SESSION_KEY, "true");
+    return;
+  }
+
+  localStorage.removeItem(INSTRUCTOR_SESSION_KEY);
 }
 
 function normalizeSettings(settings) {
@@ -311,6 +336,67 @@ function render() {
   renderEditForm();
 }
 
+function showAppScreen(screen) {
+  if (roleView) {
+    roleView.hidden = screen !== "role";
+  }
+  if (document.querySelector("#bookingView")) {
+    document.querySelector("#bookingView").hidden = screen !== "student";
+  }
+  if (instructorLoginView) {
+    instructorLoginView.hidden = screen !== "login";
+  }
+  if (instructorShell) {
+    instructorShell.hidden = screen !== "instructor";
+  }
+
+  if (screen !== "instructor") {
+    state.editingId = null;
+    renderEditForm();
+  }
+}
+
+function showRoleChoice() {
+  window.history.replaceState(null, "", "index.html");
+  showAppScreen("role");
+}
+
+function showStudentBooking() {
+  window.history.replaceState(null, "", "index.html#student");
+  showAppScreen("student");
+  render();
+}
+
+function showInstructorLogin() {
+  window.history.replaceState(null, "", "index.html#instructor");
+  showAppScreen("login");
+  loginForm?.loginName.focus();
+}
+
+function showInstructorDashboard() {
+  window.history.replaceState(null, "", "index.html#instructor");
+
+  if (adminView) {
+    adminView.hidden = false;
+  }
+  if (settingsView) {
+    settingsView.hidden = true;
+  }
+  viewButtons.forEach((button) => button.classList.toggle("active", button.dataset.view === "admin"));
+
+  showAppScreen("instructor");
+  render();
+}
+
+function openInstructorFlow() {
+  if (hasInstructorSession()) {
+    showInstructorDashboard();
+    return;
+  }
+
+  showInstructorLogin();
+}
+
 function showNote(message, isError = false) {
   if (!formNote) return;
   formNote.textContent = message;
@@ -333,6 +419,12 @@ function showSettingsNote(message, isError = false) {
   if (!settingsNote) return;
   settingsNote.textContent = message;
   settingsNote.classList.toggle("error", isError);
+}
+
+function showLoginNote(message, isError = false) {
+  if (!loginNote) return;
+  loginNote.textContent = message;
+  loginNote.classList.toggle("error", isError);
 }
 
 function validatePhone(value) {
@@ -537,6 +629,33 @@ function handleSettingsSubmit(event) {
   render();
 }
 
+function handleLogin(event) {
+  event.preventDefault();
+
+  const formData = new FormData(loginForm);
+  const login = formData.get("loginName").trim();
+  const password = formData.get("loginPassword").trim();
+
+  if (login !== INSTRUCTOR_LOGIN || password !== INSTRUCTOR_PASSWORD) {
+    showLoginNote("Неверный логин или пароль.", true);
+    return;
+  }
+
+  setInstructorSession(true);
+  loginForm.reset();
+  showLoginNote("");
+  showInstructorDashboard();
+}
+
+studentEntry?.addEventListener("click", showStudentBooking);
+instructorEntry?.addEventListener("click", openInstructorFlow);
+backHomeButtons.forEach((button) => button.addEventListener("click", showRoleChoice));
+loginForm?.addEventListener("submit", handleLogin);
+logoutInstructor?.addEventListener("click", () => {
+  setInstructorSession(false);
+  showRoleChoice();
+});
+
 dayTabs?.addEventListener("click", (event) => {
   const tab = event.target.closest("[data-date]");
   if (!tab) return;
@@ -623,3 +742,11 @@ viewButtons.forEach((button) => {
 });
 
 render();
+
+if (window.location.hash === "#student") {
+  showStudentBooking();
+} else if (window.location.hash === "#instructor") {
+  openInstructorFlow();
+} else {
+  showAppScreen("role");
+}

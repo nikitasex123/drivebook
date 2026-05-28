@@ -3,12 +3,44 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Запись на вождение</title>
+    <title>DriveBook</title>
     <link rel="stylesheet" href="styles.css" />
   </head>
-  <body data-page="student">
+  <body data-page="app">
     <main class="app-shell">
-      <section class="booking-board" id="bookingView" aria-labelledby="page-title">
+      <section class="role-view" id="roleView" aria-labelledby="role-title">
+        <div class="visual-panel role-hero" aria-label="Учебный автомобиль">
+          <img src="assets/driving-header.png" alt="Салон учебного автомобиля" />
+          <div class="visual-overlay">
+            <p class="kicker">DriveBook</p>
+            <h1 id="role-title">Запись на вождение</h1>
+            <p>Выберите роль: ученик записывается на занятие, инструктор входит в личный кабинет.</p>
+          </div>
+        </div>
+
+        <div class="role-actions" aria-label="Выбор роли">
+          <button class="role-card" id="studentEntry" type="button">
+            <span>Ученик</span>
+            <strong>Записаться на занятие</strong>
+            <small>Выбор даты, времени и отправка контактов инструктору.</small>
+          </button>
+          <button class="role-card" id="instructorEntry" type="button">
+            <span>Инструктор</span>
+            <strong>Войти в кабинет</strong>
+            <small>Журнал заявок, редактирование записей и настройки расписания.</small>
+          </button>
+        </div>
+      </section>
+
+      <section class="booking-board" id="bookingView" aria-labelledby="page-title" hidden>
+        <div class="top-bar inline-bar">
+          <div>
+            <p class="eyebrow">Ученик</p>
+            <strong>Онлайн-запись</strong>
+          </div>
+          <button class="secondary-action" type="button" data-back-home>Выбор роли</button>
+        </div>
+
         <div class="visual-panel" aria-label="Учебный автомобиль">
           <img src="assets/driving-header.png" alt="Салон учебного автомобиля" />
           <div class="visual-overlay">
@@ -87,6 +119,209 @@
           </aside>
         </div>
       </section>
+
+      <section class="login-panel" id="instructorLoginView" aria-labelledby="login-title" hidden>
+        <div class="top-bar inline-bar">
+          <div>
+            <p class="eyebrow">Инструктор</p>
+            <strong>Вход в кабинет</strong>
+          </div>
+          <button class="secondary-action" type="button" data-back-home>Выбор роли</button>
+        </div>
+
+        <form class="login-form" id="loginForm">
+          <div>
+            <p class="eyebrow">Личный кабинет</p>
+            <h1 id="login-title">Введите логин и пароль</h1>
+          </div>
+
+          <label>
+            Логин
+            <input id="loginName" name="loginName" autocomplete="username" required placeholder="instructor" />
+          </label>
+
+          <label>
+            Пароль
+            <input id="loginPassword" name="loginPassword" autocomplete="current-password" type="password" required placeholder="1234" />
+          </label>
+
+          <button class="primary-action" type="submit">Войти</button>
+          <p class="form-note muted-note">Тестовый доступ: instructor / 1234</p>
+          <p class="form-note" id="loginNote" role="status"></p>
+        </form>
+      </section>
+
+      <section class="instructor-shell" id="instructorShell" hidden>
+        <header class="top-bar">
+          <div>
+            <p class="eyebrow">DriveBook</p>
+            <strong>Кабинет инструктора</strong>
+          </div>
+          <nav class="view-switch instructor-switch" aria-label="Разделы кабинета">
+            <button class="active" type="button" data-view="admin">Журнал</button>
+            <button type="button" data-view="settings">Настройки</button>
+          </nav>
+          <div class="header-actions">
+            <button class="secondary-action" type="button" data-back-home>Выбор роли</button>
+            <button class="secondary-action" id="logoutInstructor" type="button">Выйти</button>
+          </div>
+        </header>
+
+        <section class="admin-panel" id="adminView" aria-labelledby="admin-title">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">Журнал</p>
+              <h2 id="admin-title">Заявки учеников</h2>
+            </div>
+            <div class="admin-actions">
+              <button id="exportCsv" type="button">Экспорт CSV</button>
+              <button id="clearDemo" type="button">Очистить</button>
+            </div>
+          </div>
+          <p class="form-note" id="adminNote" role="status"></p>
+
+          <div class="booking-list" id="bookingList"></div>
+        </section>
+
+        <section class="admin-panel" id="settingsView" aria-labelledby="settings-title" hidden>
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">Инструктор</p>
+              <h2 id="settings-title">Настройки расписания</h2>
+            </div>
+          </div>
+
+          <form class="settings-form" id="settingsForm">
+            <fieldset>
+              <legend>Рабочие дни</legend>
+              <div class="weekday-grid">
+                <label class="check-tile">
+                  <input type="checkbox" name="workDays" value="1" />
+                  <span>Пн</span>
+                </label>
+                <label class="check-tile">
+                  <input type="checkbox" name="workDays" value="2" />
+                  <span>Вт</span>
+                </label>
+                <label class="check-tile">
+                  <input type="checkbox" name="workDays" value="3" />
+                  <span>Ср</span>
+                </label>
+                <label class="check-tile">
+                  <input type="checkbox" name="workDays" value="4" />
+                  <span>Чт</span>
+                </label>
+                <label class="check-tile">
+                  <input type="checkbox" name="workDays" value="5" />
+                  <span>Пт</span>
+                </label>
+                <label class="check-tile">
+                  <input type="checkbox" name="workDays" value="6" />
+                  <span>Сб</span>
+                </label>
+                <label class="check-tile">
+                  <input type="checkbox" name="workDays" value="0" />
+                  <span>Вс</span>
+                </label>
+              </div>
+            </fieldset>
+
+            <div class="settings-grid">
+              <label>
+                Начало дня
+                <input id="startTime" name="startTime" type="time" required />
+              </label>
+
+              <label>
+                Конец дня
+                <input id="endTime" name="endTime" type="time" required />
+              </label>
+
+              <label>
+                Длительность занятия
+                <select id="lessonDuration" name="lessonDuration">
+                  <option value="45">45 минут</option>
+                  <option value="60">60 минут</option>
+                  <option value="90">90 минут</option>
+                  <option value="120">120 минут</option>
+                </select>
+              </label>
+            </div>
+
+            <div class="settings-summary" id="settingsSummary"></div>
+
+            <div class="settings-actions">
+              <button class="primary-action" type="submit">Сохранить расписание</button>
+              <button id="resetSettings" type="button">Сбросить</button>
+            </div>
+            <p class="form-note" id="settingsNote" role="status"></p>
+          </form>
+        </section>
+      </section>
+
+      <div class="drawer-backdrop" id="editDrawer" hidden>
+        <aside class="edit-drawer" aria-labelledby="edit-title" aria-modal="true" role="dialog">
+          <form class="edit-form" id="bookingEditForm">
+            <div class="drawer-heading">
+              <div>
+                <p class="eyebrow">Редактирование</p>
+                <h2 id="edit-title">Изменить заявку</h2>
+              </div>
+              <button class="icon-button" id="closeEdit" type="button" aria-label="Закрыть форму редактирования">×</button>
+            </div>
+
+            <div class="settings-grid">
+              <label>
+                Дата
+                <input id="editDate" name="editDate" type="date" required />
+              </label>
+              <label>
+                Время
+                <input id="editTime" name="editTime" type="time" required />
+              </label>
+              <label>
+                Инструктор
+                <select id="editInstructor" name="editInstructor">
+                  <option value="Марина Соколова">Марина Соколова</option>
+                  <option value="Любой свободный инструктор">Любой свободный инструктор</option>
+                  <option value="Алексей Волков">Алексей Волков</option>
+                </select>
+              </label>
+            </div>
+
+            <div class="settings-grid">
+              <label>
+                Имя ученика
+                <input id="editName" name="editName" required />
+              </label>
+              <label>
+                Телефон
+                <input id="editPhone" name="editPhone" inputmode="tel" required />
+              </label>
+              <label>
+                Email
+                <input id="editEmail" name="editEmail" type="email" inputmode="email" />
+              </label>
+            </div>
+
+            <label>
+              Комментарий
+              <textarea id="editComment" name="editComment" rows="3"></textarea>
+            </label>
+
+            <label class="check-row">
+              <input id="editMailing" name="editMailing" type="checkbox" />
+              <span>Можно присылать напоминания и новости на email</span>
+            </label>
+
+            <div class="settings-actions">
+              <button class="primary-action" type="submit">Сохранить изменения</button>
+              <button id="cancelEdit" type="button">Отмена</button>
+            </div>
+            <p class="form-note" id="editNote" role="status"></p>
+          </form>
+        </aside>
+      </div>
     </main>
 
     <script src="app.js"></script>
