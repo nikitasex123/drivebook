@@ -38,7 +38,7 @@
             <p class="eyebrow">Ученик</p>
             <strong>Онлайн-запись</strong>
           </div>
-          <button class="secondary-action" type="button" data-back-home>Выбор роли</button>
+          <button class="secondary-action" type="button" data-back-home>Назад</button>
         </div>
 
         <div class="visual-panel" aria-label="Учебный автомобиль">
@@ -50,7 +50,7 @@
           </div>
         </div>
 
-        <div class="content-grid">
+        <div class="student-schedule-layout">
           <section class="scheduler" aria-labelledby="schedule-title">
             <div class="section-heading">
               <div>
@@ -65,59 +65,9 @@
             <div class="day-tabs" id="dayTabs" role="tablist" aria-label="Дни занятий"></div>
             <div class="slot-grid" id="slotGrid" aria-live="polite"></div>
           </section>
-
-          <aside class="form-panel" aria-labelledby="form-title">
-            <div class="section-heading compact">
-              <div>
-                <p class="eyebrow">Шаг 2</p>
-                <h2 id="form-title">Данные ученика</h2>
-              </div>
-            </div>
-
-            <form id="bookingForm">
-              <div class="selected-slot" id="selectedSlot">
-                Выберите дату и время
-              </div>
-
-              <label>
-                Имя ученика
-                <input id="studentName" name="studentName" autocomplete="name" required placeholder="Например, Анна" />
-              </label>
-
-              <label>
-                Телефон
-                <input id="phone" name="phone" autocomplete="tel" inputmode="tel" required placeholder="+7 900 000-00-00" />
-              </label>
-
-              <label>
-                Email
-                <input id="email" name="email" autocomplete="email" inputmode="email" type="email" placeholder="name@example.com" />
-              </label>
-
-              <label>
-                Инструктор
-                <select id="instructor" name="instructor">
-                  <option value="Марина Соколова">Марина Соколова</option>
-                  <option value="Любой свободный инструктор">Любой свободный инструктор</option>
-                  <option value="Алексей Волков">Алексей Волков</option>
-                </select>
-              </label>
-
-              <label>
-                Комментарий
-                <textarea id="comment" name="comment" rows="3" placeholder="Опыт, район, пожелания"></textarea>
-              </label>
-
-              <label class="check-row">
-                <input id="mailing" name="mailing" type="checkbox" />
-                <span>Можно присылать напоминания и новости на email</span>
-              </label>
-
-              <button class="primary-action" type="submit">Записаться</button>
-              <p class="form-note" id="formNote" role="status"></p>
-            </form>
-          </aside>
         </div>
+
+        <div class="success-banner" id="bookingSuccess" hidden></div>
       </section>
 
       <section class="login-panel" id="instructorLoginView" aria-labelledby="login-title" hidden>
@@ -126,7 +76,7 @@
             <p class="eyebrow">Инструктор</p>
             <strong>Вход в кабинет</strong>
           </div>
-          <button class="secondary-action" type="button" data-back-home>Выбор роли</button>
+          <button class="secondary-action" type="button" data-back-home>Назад</button>
         </div>
 
         <form class="login-form" id="loginForm">
@@ -162,7 +112,7 @@
             <button type="button" data-view="settings">Настройки</button>
           </nav>
           <div class="header-actions">
-            <button class="secondary-action" type="button" data-back-home>Выбор роли</button>
+            <button class="secondary-action" type="button" data-back-home>Назад</button>
             <button class="secondary-action" id="logoutInstructor" type="button">Выйти</button>
           </div>
         </header>
@@ -258,6 +208,66 @@
           </form>
         </section>
       </section>
+
+      <div class="drawer-backdrop" id="bookingDrawer" hidden>
+        <aside class="edit-drawer" aria-labelledby="booking-details-title" aria-modal="true" role="dialog">
+          <form class="edit-form" id="bookingForm">
+            <div class="drawer-heading">
+              <div>
+                <p class="eyebrow">Шаг 2</p>
+                <h2 id="booking-details-title">Ввести свои данные</h2>
+              </div>
+              <button class="icon-button" id="closeBooking" type="button" aria-label="Закрыть форму записи">×</button>
+            </div>
+
+            <div class="selected-slot" id="selectedSlot">
+              Выберите дату и время
+            </div>
+
+            <div class="settings-grid">
+              <label>
+                Имя ученика
+                <input id="studentName" name="studentName" autocomplete="name" required placeholder="Например, Анна" />
+              </label>
+
+              <label>
+                Телефон
+                <input id="phone" name="phone" autocomplete="tel" inputmode="tel" required placeholder="+7 900 000-00-00" />
+              </label>
+
+              <label>
+                Email
+                <input id="email" name="email" autocomplete="email" inputmode="email" type="email" placeholder="name@example.com" />
+              </label>
+            </div>
+
+            <label>
+              Инструктор
+              <select id="instructor" name="instructor">
+                <option value="Марина Соколова">Марина Соколова</option>
+                <option value="Любой свободный инструктор">Любой свободный инструктор</option>
+                <option value="Алексей Волков">Алексей Волков</option>
+              </select>
+            </label>
+
+            <label>
+              Комментарий
+              <textarea id="comment" name="comment" rows="3" placeholder="Опыт, район, пожелания"></textarea>
+            </label>
+
+            <label class="check-row">
+              <input id="mailing" name="mailing" type="checkbox" />
+              <span>Можно присылать напоминания и новости на email</span>
+            </label>
+
+            <div class="settings-actions">
+              <button class="primary-action" type="submit">Записаться</button>
+              <button id="cancelBooking" type="button">Отмена</button>
+            </div>
+            <p class="form-note" id="formNote" role="status"></p>
+          </form>
+        </aside>
+      </div>
 
       <div class="drawer-backdrop" id="editDrawer" hidden>
         <aside class="edit-drawer" aria-labelledby="edit-title" aria-modal="true" role="dialog">

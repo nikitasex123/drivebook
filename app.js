@@ -29,9 +29,14 @@ const loginNote = document.querySelector("#loginNote");
 const instructorShell = document.querySelector("#instructorShell");
 const logoutInstructor = document.querySelector("#logoutInstructor");
 const backHomeButtons = document.querySelectorAll("[data-back-home]");
+const bookingView = document.querySelector("#bookingView");
 const dayTabs = document.querySelector("#dayTabs");
 const slotGrid = document.querySelector("#slotGrid");
+const bookingDrawer = document.querySelector("#bookingDrawer");
 const bookingForm = document.querySelector("#bookingForm");
+const closeBooking = document.querySelector("#closeBooking");
+const cancelBooking = document.querySelector("#cancelBooking");
+const bookingSuccess = document.querySelector("#bookingSuccess");
 const selectedSlot = document.querySelector("#selectedSlot");
 const bookingList = document.querySelector("#bookingList");
 const formNote = document.querySelector("#formNote");
@@ -336,12 +341,40 @@ function render() {
   renderEditForm();
 }
 
+function openBookingDrawer() {
+  if (!bookingDrawer) return;
+  bookingDrawer.hidden = false;
+  window.setTimeout(() => bookingForm?.studentName.focus(), 0);
+}
+
+function closeBookingDrawer() {
+  if (!bookingDrawer) return;
+  bookingDrawer.hidden = true;
+  showNote("");
+}
+
+function hideBookingSuccess() {
+  if (!bookingSuccess) return;
+  bookingSuccess.hidden = true;
+  bookingSuccess.textContent = "";
+}
+
+function showBookingSuccess(booking) {
+  if (!bookingSuccess) return;
+
+  bookingSuccess.innerHTML = `
+    <strong>Вы успешно записаны на занятие.</strong>
+    <span>${formatSlot(booking.date, booking.time)} · ${escapeHtml(booking.instructor)}</span>
+  `;
+  bookingSuccess.hidden = false;
+}
+
 function showAppScreen(screen) {
   if (roleView) {
     roleView.hidden = screen !== "role";
   }
-  if (document.querySelector("#bookingView")) {
-    document.querySelector("#bookingView").hidden = screen !== "student";
+  if (bookingView) {
+    bookingView.hidden = screen !== "student";
   }
   if (instructorLoginView) {
     instructorLoginView.hidden = screen !== "login";
@@ -353,6 +386,10 @@ function showAppScreen(screen) {
   if (screen !== "instructor") {
     state.editingId = null;
     renderEditForm();
+  }
+  if (screen !== "student") {
+    closeBookingDrawer();
+    hideBookingSuccess();
   }
 }
 
@@ -474,8 +511,9 @@ function handleSubmit(event) {
   saveBookings();
   bookingForm.reset();
   state.selectedSlot = null;
-  showNote("Готово. Заявка отправлена инструктору.");
+  closeBookingDrawer();
   render();
+  showBookingSuccess(booking);
 }
 
 function createId() {
@@ -663,6 +701,7 @@ dayTabs?.addEventListener("click", (event) => {
   state.activeDate = tab.dataset.date;
   state.selectedSlot = null;
   showNote("");
+  hideBookingSuccess();
   render();
 });
 
@@ -675,7 +714,9 @@ slotGrid?.addEventListener("click", (event) => {
     time: button.dataset.time,
   };
   showNote("");
+  hideBookingSuccess();
   render();
+  openBookingDrawer();
 });
 
 bookingList?.addEventListener("click", (event) => {
@@ -693,6 +734,13 @@ bookingList?.addEventListener("click", (event) => {
 });
 
 bookingForm?.addEventListener("submit", handleSubmit);
+closeBooking?.addEventListener("click", closeBookingDrawer);
+cancelBooking?.addEventListener("click", closeBookingDrawer);
+bookingDrawer?.addEventListener("click", (event) => {
+  if (event.target === bookingDrawer) {
+    closeBookingDrawer();
+  }
+});
 bookingEditForm?.addEventListener("submit", updateBooking);
 cancelEdit?.addEventListener("click", cancelEditBooking);
 closeEdit?.addEventListener("click", cancelEditBooking);
@@ -704,6 +752,9 @@ editDrawer?.addEventListener("click", (event) => {
 document.addEventListener("keydown", (event) => {
   if (event.key === "Escape" && state.editingId) {
     cancelEditBooking();
+  }
+  if (event.key === "Escape" && bookingDrawer && !bookingDrawer.hidden) {
+    closeBookingDrawer();
   }
 });
 exportCsv?.addEventListener("click", exportBookings);

@@ -227,6 +227,10 @@ button {
   gap: 0;
 }
 
+.student-schedule-layout {
+  display: block;
+}
+
 .scheduler,
 .form-panel,
 .admin-panel {
@@ -449,6 +453,26 @@ textarea:focus {
   border-color: var(--accent);
   background: var(--accent-soft);
   color: var(--accent-dark);
+}
+
+.success-banner {
+  margin: 0 28px 28px;
+  border: 1px solid #b9decf;
+  border-radius: 8px;
+  padding: 16px 18px;
+  background: var(--accent-soft);
+  color: var(--accent-dark);
+}
+
+.success-banner strong,
+.success-banner span {
+  display: block;
+}
+
+.success-banner span {
+  margin-top: 5px;
+  color: var(--muted);
+  font-weight: 700;
 }
 
 .check-row {
@@ -803,8 +827,13 @@ textarea:focus {
 
   .scheduler,
   .form-panel,
-  .admin-panel {
+  .admin-panel,
+  .success-banner {
     padding: 18px;
+  }
+
+  .success-banner {
+    margin: 0 18px 18px;
   }
 
   .section-heading,
