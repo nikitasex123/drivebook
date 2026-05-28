@@ -32,65 +32,6 @@
         </div>
         <p class="form-note" id="adminNote" role="status"></p>
 
-        <form class="edit-form" id="bookingEditForm" hidden>
-          <div class="section-heading compact">
-            <div>
-              <p class="eyebrow">Редактирование</p>
-              <h2>Изменить заявку</h2>
-            </div>
-          </div>
-
-          <div class="settings-grid">
-            <label>
-              Дата
-              <input id="editDate" name="editDate" type="date" required />
-            </label>
-            <label>
-              Время
-              <input id="editTime" name="editTime" type="time" required />
-            </label>
-            <label>
-              Инструктор
-              <select id="editInstructor" name="editInstructor">
-                <option value="Марина Соколова">Марина Соколова</option>
-                <option value="Любой свободный инструктор">Любой свободный инструктор</option>
-                <option value="Алексей Волков">Алексей Волков</option>
-              </select>
-            </label>
-          </div>
-
-          <div class="settings-grid">
-            <label>
-              Имя ученика
-              <input id="editName" name="editName" required />
-            </label>
-            <label>
-              Телефон
-              <input id="editPhone" name="editPhone" inputmode="tel" required />
-            </label>
-            <label>
-              Email
-              <input id="editEmail" name="editEmail" type="email" inputmode="email" />
-            </label>
-          </div>
-
-          <label>
-            Комментарий
-            <textarea id="editComment" name="editComment" rows="3"></textarea>
-          </label>
-
-          <label class="check-row">
-            <input id="editMailing" name="editMailing" type="checkbox" />
-            <span>Можно присылать напоминания и новости на email</span>
-          </label>
-
-          <div class="settings-actions">
-            <button class="primary-action" type="submit">Сохранить изменения</button>
-            <button id="cancelEdit" type="button">Отмена</button>
-          </div>
-          <p class="form-note" id="editNote" role="status"></p>
-        </form>
-
         <div class="booking-list" id="bookingList"></div>
       </section>
 
@@ -168,6 +109,70 @@
           <p class="form-note" id="settingsNote" role="status"></p>
         </form>
       </section>
+
+      <div class="drawer-backdrop" id="editDrawer" hidden>
+        <aside class="edit-drawer" aria-labelledby="edit-title" aria-modal="true" role="dialog">
+          <form class="edit-form" id="bookingEditForm">
+            <div class="drawer-heading">
+              <div>
+                <p class="eyebrow">Редактирование</p>
+                <h2 id="edit-title">Изменить заявку</h2>
+              </div>
+              <button class="icon-button" id="closeEdit" type="button" aria-label="Закрыть форму редактирования">×</button>
+            </div>
+
+            <div class="settings-grid">
+              <label>
+                Дата
+                <input id="editDate" name="editDate" type="date" required />
+              </label>
+              <label>
+                Время
+                <input id="editTime" name="editTime" type="time" required />
+              </label>
+              <label>
+                Инструктор
+                <select id="editInstructor" name="editInstructor">
+                  <option value="Марина Соколова">Марина Соколова</option>
+                  <option value="Любой свободный инструктор">Любой свободный инструктор</option>
+                  <option value="Алексей Волков">Алексей Волков</option>
+                </select>
+              </label>
+            </div>
+
+            <div class="settings-grid">
+              <label>
+                Имя ученика
+                <input id="editName" name="editName" required />
+              </label>
+              <label>
+                Телефон
+                <input id="editPhone" name="editPhone" inputmode="tel" required />
+              </label>
+              <label>
+                Email
+                <input id="editEmail" name="editEmail" type="email" inputmode="email" />
+              </label>
+            </div>
+
+            <label>
+              Комментарий
+              <textarea id="editComment" name="editComment" rows="3"></textarea>
+            </label>
+
+            <label class="check-row">
+              <input id="editMailing" name="editMailing" type="checkbox" />
+              <span>Можно присылать напоминания и новости на email</span>
+            </label>
+
+            <div class="settings-actions">
+              <button class="primary-action" type="submit">Сохранить изменения</button>
+              <button id="cancelEdit" type="button">Отмена</button>
+            </div>
+            <p class="form-note" id="editNote" role="status"></p>
+          </form>
+        </aside>
+      </div>
     </main>
 
     <script src="app.js"></script>

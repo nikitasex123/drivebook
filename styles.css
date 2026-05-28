@@ -520,16 +520,62 @@ textarea:focus {
   color: var(--danger);
 }
 
-.edit-form {
-  margin-bottom: 16px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  padding: 18px;
-  background: var(--surface-strong);
-}
-
 .settings-form {
   max-width: 860px;
+}
+
+.drawer-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  justify-content: flex-end;
+  background: rgba(16, 25, 22, 0.34);
+}
+
+.drawer-backdrop[hidden] {
+  display: none;
+}
+
+.edit-drawer {
+  width: min(620px, 100%);
+  height: 100%;
+  overflow: auto;
+  border-left: 1px solid var(--line);
+  background: var(--surface);
+  box-shadow: -18px 0 48px rgba(29, 43, 35, 0.18);
+}
+
+.edit-form {
+  min-height: 100%;
+  padding: 28px;
+  background: var(--surface);
+}
+
+.drawer-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 22px;
+}
+
+.drawer-heading h2 {
+  margin: 0;
+  font-size: 1.35rem;
+  line-height: 1.2;
+}
+
+.icon-button {
+  width: 42px;
+  min-width: 42px;
+  height: 42px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--ink);
+  font-size: 1.7rem;
+  line-height: 1;
 }
 
 .weekday-grid {
@@ -622,6 +668,10 @@ textarea:focus {
   .settings-grid {
     grid-template-columns: repeat(2, minmax(120px, 1fr));
   }
+
+  .edit-drawer {
+    width: min(560px, 100%);
+  }
 }
 
 @media (max-width: 620px) {
@@ -672,5 +722,13 @@ textarea:focus {
   .weekday-grid,
   .settings-grid {
     grid-template-columns: 1fr 1fr;
+  }
+
+  .drawer-backdrop {
+    align-items: stretch;
+  }
+
+  .edit-form {
+    padding: 20px;
   }
 }

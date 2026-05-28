@@ -32,8 +32,10 @@ const settingsForm = document.querySelector("#settingsForm");
 const settingsSummary = document.querySelector("#settingsSummary");
 const settingsNote = document.querySelector("#settingsNote");
 const resetSettings = document.querySelector("#resetSettings");
+const editDrawer = document.querySelector("#editDrawer");
 const bookingEditForm = document.querySelector("#bookingEditForm");
 const cancelEdit = document.querySelector("#cancelEdit");
+const closeEdit = document.querySelector("#closeEdit");
 const editNote = document.querySelector("#editNote");
 const viewButtons = document.querySelectorAll("[data-view]");
 
@@ -280,7 +282,10 @@ function renderEditForm() {
   if (!bookingEditForm) return;
 
   const booking = state.bookings.find((item) => item.id === state.editingId);
-  bookingEditForm.hidden = !booking;
+
+  if (editDrawer) {
+    editDrawer.hidden = !booking;
+  }
 
   if (!booking) {
     bookingEditForm.reset();
@@ -393,7 +398,7 @@ function startEditBooking(id) {
   state.editingId = id;
   showEditNote("");
   render();
-  bookingEditForm?.scrollIntoView({ behavior: "smooth", block: "start" });
+  window.setTimeout(() => bookingEditForm?.editName.focus(), 0);
 }
 
 function cancelEditBooking() {
@@ -571,6 +576,17 @@ bookingList?.addEventListener("click", (event) => {
 bookingForm?.addEventListener("submit", handleSubmit);
 bookingEditForm?.addEventListener("submit", updateBooking);
 cancelEdit?.addEventListener("click", cancelEditBooking);
+closeEdit?.addEventListener("click", cancelEditBooking);
+editDrawer?.addEventListener("click", (event) => {
+  if (event.target === editDrawer) {
+    cancelEditBooking();
+  }
+});
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && state.editingId) {
+    cancelEditBooking();
+  }
+});
 exportCsv?.addEventListener("click", exportBookings);
 clearDemo?.addEventListener("click", () => {
   state.bookings = [];
