@@ -14,6 +14,17 @@ create table if not exists public.instructors (
   updated_at timestamptz not null default now()
 );
 
+create table if not exists public.students (
+  id text primary key,
+  first_name text not null,
+  last_name text not null,
+  patronymic text default '',
+  phone text not null unique,
+  email text not null unique,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
 create table if not exists public.bookings (
   id text primary key,
   lesson_date date not null,
@@ -21,6 +32,7 @@ create table if not exists public.bookings (
   student_name text not null,
   phone text not null,
   email text default '',
+  student_id text references public.students(id) on delete set null,
   instructor_id text not null references public.instructors(id) on delete cascade,
   instructor_name text not null,
   comment text default '',
@@ -29,11 +41,34 @@ create table if not exists public.bookings (
   updated_at timestamptz
 );
 
+alter table public.bookings
+  add column if not exists student_id text;
+
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_constraint
+    where conname = 'bookings_student_id_fkey'
+      and conrelid = 'public.bookings'::regclass
+  ) then
+    alter table public.bookings
+      add constraint bookings_student_id_fkey
+      foreign key (student_id)
+      references public.students(id)
+      on delete set null;
+  end if;
+end;
+$$;
+
 create index if not exists bookings_instructor_date_idx
   on public.bookings (instructor_id, lesson_date, lesson_time);
 
 create index if not exists bookings_date_time_idx
   on public.bookings (lesson_date, lesson_time);
+
+create index if not exists bookings_student_idx
+  on public.bookings (student_id, lesson_date, lesson_time);
 
 create or replace view public.booked_slots as
 select
@@ -44,11 +79,15 @@ select
 from public.bookings;
 
 alter table public.instructors enable row level security;
+alter table public.students enable row level security;
 alter table public.bookings enable row level security;
 
 drop policy if exists "MVP public read instructors" on public.instructors;
 drop policy if exists "MVP public create instructors" on public.instructors;
 drop policy if exists "MVP public update instructors" on public.instructors;
+drop policy if exists "MVP public read students" on public.students;
+drop policy if exists "MVP public create students" on public.students;
+drop policy if exists "MVP public update students" on public.students;
 drop policy if exists "MVP public read bookings" on public.bookings;
 drop policy if exists "MVP public create bookings" on public.bookings;
 drop policy if exists "MVP public update bookings" on public.bookings;
@@ -64,6 +103,19 @@ create policy "MVP public create instructors"
 
 create policy "MVP public update instructors"
   on public.instructors for update
+  using (true)
+  with check (true);
+
+create policy "MVP public read students"
+  on public.students for select
+  using (true);
+
+create policy "MVP public create students"
+  on public.students for insert
+  with check (true);
+
+create policy "MVP public update students"
+  on public.students for update
   using (true)
   with check (true);
 
@@ -97,6 +149,11 @@ $$;
 drop trigger if exists instructors_touch_updated_at on public.instructors;
 create trigger instructors_touch_updated_at
 before update on public.instructors
+for each row execute function public.touch_updated_at();
+
+drop trigger if exists students_touch_updated_at on public.students;
+create trigger students_touch_updated_at
+before update on public.students
 for each row execute function public.touch_updated_at();
 
 drop trigger if exists bookings_touch_updated_at on public.bookings;

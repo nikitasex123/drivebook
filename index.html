@@ -37,13 +37,99 @@
         </div>
       </section>
 
+      <section class="login-panel" id="studentLoginView" aria-labelledby="student-login-title" hidden>
+        <div class="top-bar inline-bar">
+          <div>
+            <p class="eyebrow">Ученик</p>
+            <strong>Личный кабинет</strong>
+          </div>
+          <button class="secondary-action" type="button" data-back-home>Назад</button>
+        </div>
+
+        <form class="login-form" id="studentLoginForm">
+          <div>
+            <p class="eyebrow">Вход</p>
+            <h1 id="student-login-title">Войти как ученик</h1>
+          </div>
+
+          <label>
+            Email
+            <input id="studentLoginEmail" name="studentLoginEmail" autocomplete="email" inputmode="email" type="email" required placeholder="name@example.com" />
+          </label>
+
+          <label>
+            Пароль
+            <input id="studentLoginPassword" name="studentLoginPassword" autocomplete="current-password" type="password" required placeholder="Пароль" />
+          </label>
+
+          <div class="settings-actions">
+            <button class="primary-action" type="submit">Войти</button>
+            <button id="showStudentRegister" type="button">Создать кабинет</button>
+          </div>
+          <p class="form-note muted-note">После входа данные ученика будут подставляться в запись автоматически.</p>
+          <p class="form-note" id="studentLoginNote" role="status"></p>
+        </form>
+
+        <form class="login-form" id="studentRegisterForm" hidden>
+          <div>
+            <p class="eyebrow">Регистрация</p>
+            <h1 id="student-register-title">Создать кабинет ученика</h1>
+          </div>
+
+          <div class="settings-grid two-column">
+            <label>
+              Фамилия
+              <input id="studentRegisterLastName" name="lastName" autocomplete="family-name" required placeholder="Иванов" />
+            </label>
+
+            <label>
+              Имя
+              <input id="studentRegisterFirstName" name="firstName" autocomplete="given-name" required placeholder="Иван" />
+            </label>
+          </div>
+
+          <label>
+            Отчество
+            <input id="studentRegisterPatronymic" name="patronymic" autocomplete="additional-name" placeholder="Петрович" />
+          </label>
+
+          <div class="settings-grid two-column">
+            <label>
+              Телефон
+              <input id="studentRegisterPhone" name="phone" autocomplete="tel" inputmode="tel" required placeholder="+7 900 123-45-67" />
+            </label>
+
+            <label>
+              Email
+              <input id="studentRegisterEmail" name="email" autocomplete="email" inputmode="email" type="email" required placeholder="name@example.com" />
+            </label>
+          </div>
+
+          <label>
+            Пароль
+            <input id="studentRegisterPassword" name="studentRegisterPassword" autocomplete="new-password" type="password" minlength="8" required placeholder="Минимум 8 символов" />
+          </label>
+
+          <div class="settings-actions">
+            <button class="primary-action" type="submit">Зарегистрироваться</button>
+            <button id="showStudentLogin" type="button">Уже есть кабинет</button>
+          </div>
+          <p class="form-note muted-note">Профиль ученика сохраняется на сервере и будет использоваться при каждой записи.</p>
+          <p class="form-note" id="studentRegisterNote" role="status"></p>
+        </form>
+      </section>
+
       <section class="booking-board" id="bookingView" aria-labelledby="page-title" hidden>
         <div class="top-bar inline-bar">
           <div>
             <p class="eyebrow">Ученик</p>
             <strong>Онлайн-запись</strong>
+            <span class="current-student" id="currentStudentName"></span>
           </div>
-          <button class="secondary-action" type="button" data-back-home>Назад</button>
+          <div class="header-actions">
+            <button class="secondary-action" type="button" data-back-home>Назад</button>
+            <button class="secondary-action" id="logoutStudent" type="button">Выйти</button>
+          </div>
         </div>
 
         <div class="visual-panel" aria-label="Учебный автомобиль">
@@ -400,7 +486,9 @@
               Выберите дату и время
             </div>
 
-            <div class="settings-grid">
+            <div class="profile-summary" id="studentProfileSummary" hidden></div>
+
+            <div class="settings-grid" id="studentDetailsFields">
               <label>
                 Имя ученика
                 <input id="studentName" name="studentName" autocomplete="name" required placeholder="Например, Анна" />

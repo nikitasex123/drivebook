@@ -1,7 +1,9 @@
 const STORAGE_KEY = "drivingLessonBookings";
 const SETTINGS_KEY = "drivingLessonSettings";
 const INSTRUCTORS_KEY = "drivingLessonInstructors";
+const STUDENTS_KEY = "driveBookStudents";
 const INSTRUCTOR_SESSION_KEY = "driveBookInstructorSession";
+const STUDENT_SESSION_KEY = "driveBookStudentSession";
 const ANY_INSTRUCTOR_ID = "any";
 const INTERNAL_TEST_INSTRUCTOR_IDS = new Set(["codex-test-instructor"]);
 const DAY_COUNT = 7;
@@ -51,7 +53,10 @@ const state = {
   calendarStart: getStartOfWeek(new Date()),
   bookings: loadBookings(),
   instructors: loadInstructors(),
+  students: loadStudents(),
   currentInstructorId: localStorage.getItem(INSTRUCTOR_SESSION_KEY),
+  currentStudentId: localStorage.getItem(STUDENT_SESSION_KEY),
+  studentsSchemaReady: false,
 };
 
 const syncStatus = document.querySelector("#syncStatus");
@@ -59,6 +64,13 @@ const syncStatusText = syncStatus?.querySelector(".sync-status__text");
 const roleView = document.querySelector("#roleView");
 const studentEntry = document.querySelector("#studentEntry");
 const instructorEntry = document.querySelector("#instructorEntry");
+const studentLoginView = document.querySelector("#studentLoginView");
+const studentLoginForm = document.querySelector("#studentLoginForm");
+const studentRegisterForm = document.querySelector("#studentRegisterForm");
+const showStudentRegister = document.querySelector("#showStudentRegister");
+const showStudentLogin = document.querySelector("#showStudentLogin");
+const studentLoginNote = document.querySelector("#studentLoginNote");
+const studentRegisterNote = document.querySelector("#studentRegisterNote");
 const instructorLoginView = document.querySelector("#instructorLoginView");
 const loginForm = document.querySelector("#loginForm");
 const registerForm = document.querySelector("#registerForm");
@@ -68,7 +80,9 @@ const loginNote = document.querySelector("#loginNote");
 const registerNote = document.querySelector("#registerNote");
 const instructorShell = document.querySelector("#instructorShell");
 const currentInstructorName = document.querySelector("#currentInstructorName");
+const currentStudentName = document.querySelector("#currentStudentName");
 const logoutInstructor = document.querySelector("#logoutInstructor");
+const logoutStudent = document.querySelector("#logoutStudent");
 const backHomeButtons = document.querySelectorAll("[data-back-home]");
 const bookingView = document.querySelector("#bookingView");
 const studentInstructorFilter = document.querySelector("#studentInstructorFilter");
@@ -80,6 +94,8 @@ const closeBooking = document.querySelector("#closeBooking");
 const cancelBooking = document.querySelector("#cancelBooking");
 const bookingSuccess = document.querySelector("#bookingSuccess");
 const selectedSlot = document.querySelector("#selectedSlot");
+const studentProfileSummary = document.querySelector("#studentProfileSummary");
+const studentDetailsFields = document.querySelector("#studentDetailsFields");
 const bookingList = document.querySelector("#bookingList");
 const formNote = document.querySelector("#formNote");
 const adminNote = document.querySelector("#adminNote");
@@ -217,6 +233,15 @@ function loadInstructors() {
   }
 }
 
+function loadStudents() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(STUDENTS_KEY)) ?? [];
+    return saved.map(normalizeStudent).filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
 function isVisibleInstructor(instructor) {
   return Boolean(instructor) && !INTERNAL_TEST_INSTRUCTOR_IDS.has(instructor.id);
 }
@@ -229,6 +254,11 @@ function saveBookings() {
 function saveInstructors() {
   localStorage.setItem(INSTRUCTORS_KEY, JSON.stringify(state.instructors));
   return syncInstructorsToSupabase();
+}
+
+function saveStudents() {
+  localStorage.setItem(STUDENTS_KEY, JSON.stringify(state.students));
+  return syncStudentsToSupabase();
 }
 
 function mapInstructorFromRow(row) {
@@ -263,6 +293,30 @@ function mapInstructorToRow(instructor) {
   };
 }
 
+function mapStudentFromRow(row) {
+  return normalizeStudent({
+    id: row.id,
+    firstName: row.first_name,
+    lastName: row.last_name,
+    patronymic: row.patronymic,
+    phone: row.phone,
+    email: row.email,
+    createdAt: row.created_at,
+  });
+}
+
+function mapStudentToRow(student) {
+  return {
+    id: student.id,
+    first_name: student.firstName,
+    last_name: student.lastName,
+    patronymic: student.patronymic,
+    phone: student.phone,
+    email: student.email,
+    created_at: student.createdAt,
+  };
+}
+
 function normalizeBooking(booking) {
   return {
     id: String(booking.id ?? createId("booking")),
@@ -271,6 +325,7 @@ function normalizeBooking(booking) {
     name: String(booking.name ?? "").trim(),
     phone: String(booking.phone ?? "").trim(),
     email: String(booking.email ?? "").trim(),
+    studentId: booking.studentId ?? booking.student_id ?? "",
     instructorId: booking.instructorId ?? booking.instructor_id ?? "",
     instructorName: booking.instructorName ?? booking.instructor_name ?? booking.instructor ?? "Инструктор не назначен",
     instructor: booking.instructor ?? booking.instructorName ?? booking.instructor_name ?? "Инструктор не назначен",
@@ -289,6 +344,7 @@ function mapBookingFromRow(row) {
     name: row.student_name,
     phone: row.phone,
     email: row.email,
+    studentId: row.student_id,
     instructorId: row.instructor_id,
     instructorName: row.instructor_name,
     instructor: row.instructor_name,
@@ -301,7 +357,7 @@ function mapBookingFromRow(row) {
 
 function mapBookingToRow(booking) {
   const normalized = normalizeBooking(booking);
-  return {
+  const row = {
     id: normalized.id,
     lesson_date: normalized.date,
     lesson_time: normalized.time,
@@ -315,6 +371,12 @@ function mapBookingToRow(booking) {
     created_at: normalized.createdAt,
     updated_at: normalized.updatedAt,
   };
+
+  if (state.studentsSchemaReady) {
+    row.student_id = normalized.studentId || null;
+  }
+
+  return row;
 }
 
 async function loadSupabaseState() {
@@ -327,37 +389,53 @@ async function loadSupabaseState() {
 
   try {
     const localInstructors = [...state.instructors];
+    const localStudents = [...state.students];
     const localBookings = [...state.bookings];
-    const [instructorsResult, bookingsResult] = await Promise.all([
+    const [instructorsResult, studentsResult, bookingsResult] = await Promise.all([
       supabaseClient.from("instructors").select("*").order("created_at", { ascending: true }),
+      supabaseClient.from("students").select("*").order("created_at", { ascending: true }),
       supabaseClient.from("bookings").select("*").order("lesson_date", { ascending: true }).order("lesson_time", { ascending: true }),
     ]);
 
     if (instructorsResult.error) throw instructorsResult.error;
     if (bookingsResult.error) throw bookingsResult.error;
 
+    state.studentsSchemaReady = !studentsResult.error;
+    if (studentsResult.error) {
+      console.warn("Supabase students table is not ready", studentsResult.error);
+    }
+
     const remoteInstructors = instructorsResult.data.map(mapInstructorFromRow).filter(isVisibleInstructor);
+    const remoteStudents = state.studentsSchemaReady
+      ? studentsResult.data.map(mapStudentFromRow).filter(Boolean)
+      : localStudents;
     const remoteBookings = bookingsResult.data
       .map(mapBookingFromRow)
       .filter((booking) => !INTERNAL_TEST_INSTRUCTOR_IDS.has(booking.instructorId));
 
-    if (remoteInstructors.length === 0 && localInstructors.length > 0) {
-      state.instructors = localInstructors;
-      state.bookings = localBookings;
-      await Promise.all([
-        syncInstructorsToSupabase(),
-        syncBookingsToSupabase(),
-      ]);
-    } else {
-      state.instructors = remoteInstructors;
-      state.bookings = remoteBookings;
-    }
+    const shouldSyncLocalInstructors = remoteInstructors.length === 0 && localInstructors.length > 0;
+    const shouldSyncLocalStudents = state.studentsSchemaReady && remoteStudents.length === 0 && localStudents.length > 0;
+    const shouldSyncLocalBookings = remoteBookings.length === 0 && localBookings.length > 0;
+
+    state.instructors = shouldSyncLocalInstructors ? localInstructors : remoteInstructors;
+    state.students = shouldSyncLocalStudents ? localStudents : remoteStudents;
+    state.bookings = shouldSyncLocalBookings ? localBookings : remoteBookings;
+
+    await Promise.all([
+      shouldSyncLocalInstructors ? syncInstructorsToSupabase() : Promise.resolve(true),
+      shouldSyncLocalStudents ? syncStudentsToSupabase() : Promise.resolve(true),
+      shouldSyncLocalBookings ? syncBookingsToSupabase() : Promise.resolve(true),
+    ]);
 
     localStorage.setItem(INSTRUCTORS_KEY, JSON.stringify(state.instructors));
+    localStorage.setItem(STUDENTS_KEY, JSON.stringify(state.students));
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state.bookings));
 
     if (state.currentInstructorId && !getCurrentInstructor()) {
       setInstructorSession(null);
+    }
+    if (state.currentStudentId && !getCurrentStudent()) {
+      setStudentSession(null);
     }
     syncUiState.pending = 0;
     setSyncStatus("online", "Сервер подключен");
@@ -387,6 +465,36 @@ async function syncInstructorsToSupabase() {
     return true;
   } catch (error) {
     console.error("Supabase instructors sync failed", error);
+    finishSyncError(error);
+    return false;
+  }
+}
+
+async function syncStudentsToSupabase() {
+  const studentsToSync = state.students.filter(Boolean);
+
+  if (!isSupabaseEnabled || studentsToSync.length === 0) {
+    showSyncIdleStatus();
+    return true;
+  }
+
+  if (!state.studentsSchemaReady) {
+    finishSyncError(null, "Обновите схему Supabase");
+    return false;
+  }
+
+  startSyncStatus("Сохраняем учеников");
+
+  try {
+    const { error } = await supabaseClient
+      .from("students")
+      .upsert(studentsToSync.map(mapStudentToRow), { onConflict: "id" });
+
+    if (error) throw error;
+    finishSyncSuccess("Ученики сохранены");
+    return true;
+  } catch (error) {
+    console.error("Supabase students sync failed", error);
     finishSyncError(error);
     return false;
   }
@@ -621,6 +729,31 @@ function getInstructorByPhone(phone) {
   return state.instructors.find((instructor) => normalizePhone(instructor.phone) === normalizedPhone) ?? null;
 }
 
+function normalizeStudent(student) {
+  if (!student || typeof student !== "object") {
+    return null;
+  }
+
+  const firstName = String(student.firstName ?? "").trim();
+  const lastName = String(student.lastName ?? "").trim();
+  const email = normalizeEmail(student.email);
+  const phone = normalizePhone(student.phone);
+
+  if (!firstName || !lastName || !email || !phone) {
+    return null;
+  }
+
+  return {
+    id: String(student.id ?? createId("student")),
+    firstName,
+    lastName,
+    patronymic: String(student.patronymic ?? "").trim(),
+    phone: formatPhone(phone),
+    email,
+    createdAt: student.createdAt ?? new Date().toISOString(),
+  };
+}
+
 function normalizeInstructor(instructor) {
   if (!instructor || typeof instructor !== "object") {
     return null;
@@ -653,6 +786,10 @@ function hasInstructorSession() {
   return Boolean(getCurrentInstructor());
 }
 
+function hasStudentSession() {
+  return Boolean(getCurrentStudent());
+}
+
 function setInstructorSession(instructorId) {
   state.currentInstructorId = instructorId || null;
 
@@ -664,17 +801,46 @@ function setInstructorSession(instructorId) {
   localStorage.removeItem(INSTRUCTOR_SESSION_KEY);
 }
 
+function setStudentSession(studentId) {
+  state.currentStudentId = studentId || null;
+
+  if (studentId) {
+    localStorage.setItem(STUDENT_SESSION_KEY, studentId);
+    return;
+  }
+
+  localStorage.removeItem(STUDENT_SESSION_KEY);
+}
+
 function getCurrentInstructor() {
   return state.instructors.find((instructor) => instructor.id === state.currentInstructorId) ?? null;
+}
+
+function getCurrentStudent() {
+  return state.students.find((student) => student.id === state.currentStudentId) ?? null;
 }
 
 function getInstructorById(instructorId) {
   return state.instructors.find((instructor) => instructor.id === instructorId) ?? null;
 }
 
+function getStudentById(studentId) {
+  return state.students.find((student) => student.id === studentId) ?? null;
+}
+
 function getInstructorByLogin(login) {
   const normalizedLogin = normalizeLogin(login);
   return state.instructors.find((instructor) => instructor.login === normalizedLogin) ?? null;
+}
+
+function getStudentByEmail(email) {
+  const normalizedEmail = normalizeEmail(email);
+  return state.students.find((student) => student.email === normalizedEmail) ?? null;
+}
+
+function getStudentByPhone(phone) {
+  const normalizedPhone = normalizePhone(phone);
+  return state.students.find((student) => normalizePhone(student.phone) === normalizedPhone) ?? null;
 }
 
 function getInstructorName(instructor) {
@@ -683,6 +849,16 @@ function getInstructorName(instructor) {
   }
 
   return [instructor.lastName, instructor.firstName, instructor.patronymic]
+    .filter(Boolean)
+    .join(" ");
+}
+
+function getStudentName(student) {
+  if (!student) {
+    return "Ученик";
+  }
+
+  return [student.lastName, student.firstName, student.patronymic]
     .filter(Boolean)
     .join(" ");
 }
@@ -1060,6 +1236,34 @@ function renderCurrentInstructorName() {
   currentInstructorName.textContent = instructor ? getInstructorName(instructor) : "";
 }
 
+function renderCurrentStudentProfile() {
+  const student = getCurrentStudent();
+
+  if (currentStudentName) {
+    currentStudentName.textContent = student ? getStudentName(student) : "";
+  }
+
+  if (studentProfileSummary) {
+    if (student) {
+      studentProfileSummary.hidden = false;
+      studentProfileSummary.innerHTML = `
+        <strong>Запись для ${escapeHtml(getStudentName(student))}</strong>
+        <span>${escapeHtml(student.phone)} · ${escapeHtml(student.email)}</span>
+      `;
+    } else {
+      studentProfileSummary.hidden = true;
+      studentProfileSummary.innerHTML = "";
+    }
+  }
+
+  if (studentDetailsFields) {
+    studentDetailsFields.hidden = Boolean(student);
+    studentDetailsFields.querySelectorAll("input").forEach((input) => {
+      input.disabled = Boolean(student);
+    });
+  }
+}
+
 function renderSettingsForm() {
   if (!settingsForm || !settingsSummary) return;
 
@@ -1329,6 +1533,7 @@ function render() {
   renderSelectedSlot();
   renderBookings();
   renderCurrentInstructorName();
+  renderCurrentStudentProfile();
   renderSettingsForm();
   renderNotifications();
   renderCalendar();
@@ -1399,6 +1604,9 @@ function showAppScreen(screen) {
   if (bookingView) {
     bookingView.hidden = screen !== "student";
   }
+  if (studentLoginView) {
+    studentLoginView.hidden = screen !== "student-login";
+  }
   if (instructorLoginView) {
     instructorLoginView.hidden = screen !== "login";
   }
@@ -1422,10 +1630,60 @@ function showRoleChoice() {
   showAppScreen("role");
 }
 
+function showStudentLoginMode() {
+  if (studentLoginForm) {
+    studentLoginForm.hidden = false;
+  }
+  if (studentRegisterForm) {
+    studentRegisterForm.hidden = true;
+  }
+  showStudentLoginNote("");
+  showStudentRegisterNote("");
+  studentLoginForm?.studentLoginEmail.focus();
+}
+
+function showStudentRegisterMode() {
+  if (studentLoginForm) {
+    studentLoginForm.hidden = true;
+  }
+  if (studentRegisterForm) {
+    studentRegisterForm.hidden = false;
+  }
+  showStudentLoginNote("");
+  showStudentRegisterNote("");
+  studentRegisterForm?.lastName.focus();
+}
+
+function showStudentLoginScreen() {
+  window.history.replaceState(null, "", "index.html#student");
+  showAppScreen("student-login");
+  showStudentLoginMode();
+}
+
 function showStudentBooking() {
+  if (isSupabaseEnabled && !hasStudentSession()) {
+    showStudentLoginScreen();
+    return;
+  }
+
   window.history.replaceState(null, "", "index.html#student");
   showAppScreen("student");
   render();
+}
+
+function openStudentFlow() {
+  if (!isSupabaseEnabled) {
+    showStudentBooking();
+    return;
+  }
+
+  if (hasStudentSession()) {
+    showStudentBooking();
+    return;
+  }
+
+  setStudentSession(null);
+  showStudentLoginScreen();
 }
 
 function showLoginMode() {
@@ -1529,6 +1787,18 @@ function showRegisterNote(message, isError = false) {
   registerNote.classList.toggle("error", isError);
 }
 
+function showStudentLoginNote(message, isError = false) {
+  if (!studentLoginNote) return;
+  studentLoginNote.textContent = message;
+  studentLoginNote.classList.toggle("error", isError);
+}
+
+function showStudentRegisterNote(message, isError = false) {
+  if (!studentRegisterNote) return;
+  studentRegisterNote.textContent = message;
+  studentRegisterNote.classList.toggle("error", isError);
+}
+
 function validatePhone(value) {
   return isValidPhone(value);
 }
@@ -1573,6 +1843,11 @@ function getAuthErrorMessage(error) {
 
 function getAuthProfileFromUser(user) {
   const metadata = user?.user_metadata ?? {};
+
+  if (metadata.role && metadata.role !== "instructor") {
+    return null;
+  }
+
   const firstName = String(metadata.firstName ?? metadata.first_name ?? "").trim();
   const lastName = String(metadata.lastName ?? metadata.last_name ?? "").trim();
   const email = normalizeEmail(user?.email ?? metadata.email);
@@ -1593,6 +1868,32 @@ function getAuthProfileFromUser(user) {
     password: "",
     schedule: loadLegacySettings(),
     notifications: { ...DEFAULT_NOTIFICATIONS },
+    createdAt: new Date().toISOString(),
+  });
+}
+
+function getStudentProfileFromUser(user) {
+  const metadata = user?.user_metadata ?? {};
+
+  if (metadata.role && metadata.role !== "student") {
+    return null;
+  }
+
+  const firstName = String(metadata.firstName ?? metadata.first_name ?? "").trim();
+  const lastName = String(metadata.lastName ?? metadata.last_name ?? "").trim();
+  const email = normalizeEmail(user?.email ?? metadata.email);
+
+  if (!user?.id || !firstName || !lastName || !email) {
+    return null;
+  }
+
+  return normalizeStudent({
+    id: user.id,
+    firstName,
+    lastName,
+    patronymic: metadata.patronymic,
+    phone: metadata.phone,
+    email,
     createdAt: new Date().toISOString(),
   });
 }
@@ -1630,10 +1931,16 @@ function handleSubmit(event) {
   }
 
   const formData = new FormData(bookingForm);
-  const name = formData.get("studentName").trim();
-  const phone = formData.get("phone").trim();
-  const email = normalizeEmail(formData.get("email"));
+  const currentStudent = getCurrentStudent();
+  const name = currentStudent ? getStudentName(currentStudent) : formData.get("studentName").trim();
+  const phone = currentStudent ? currentStudent.phone : formData.get("phone").trim();
+  const email = currentStudent ? currentStudent.email : normalizeEmail(formData.get("email"));
   const mailing = formData.get("mailing") === "on";
+
+  if (isSupabaseEnabled && !currentStudent) {
+    showNote("Войдите в кабинет ученика, чтобы записаться на занятие.", true);
+    return;
+  }
 
   if (!validatePhone(phone)) {
     showNote(getPhoneErrorMessage(), true);
@@ -1658,6 +1965,7 @@ function handleSubmit(event) {
     name,
     phone: formatPhone(phone),
     email,
+    studentId: currentStudent?.id ?? "",
     instructorId: assignedInstructor.id,
     instructorName,
     instructor: instructorName,
@@ -1897,6 +2205,170 @@ function handleSettingsSubmit(event) {
   render();
 }
 
+async function handleStudentLogin(event) {
+  event.preventDefault();
+
+  if (!isSupabaseEnabled) {
+    showStudentLoginNote("Для кабинета ученика нужен подключенный сервер Supabase.", true);
+    return;
+  }
+
+  const formData = new FormData(studentLoginForm);
+  const email = normalizeEmail(formData.get("studentLoginEmail"));
+  const password = formData.get("studentLoginPassword").trim();
+
+  if (!isValidEmail(email)) {
+    showStudentLoginNote(getEmailErrorMessage(), true);
+    return;
+  }
+
+  if (getInstructorByEmail(email) && !getStudentByEmail(email)) {
+    showStudentLoginNote("Этот email привязан к кабинету инструктора. Для ученика нужен отдельный кабинет.", true);
+    return;
+  }
+
+  startSyncStatus("Проверяем вход");
+
+  const { data, error } = await supabaseClient.auth.signInWithPassword({
+    email,
+    password,
+  });
+
+  if (error) {
+    showSyncIdleStatus();
+    showStudentLoginNote(getAuthErrorMessage(error), true);
+    return;
+  }
+
+  let student = getStudentById(data.user.id) || getStudentByEmail(email);
+
+  if (!student) {
+    student = getStudentProfileFromUser(data.user);
+    if (student) {
+      state.students.push(student);
+      await saveStudents();
+    }
+  }
+
+  if (!student) {
+    showSyncIdleStatus();
+    showStudentLoginNote("Это не ученический кабинет или профиль ученика не найден.", true);
+    return;
+  }
+
+  setStudentSession(student.id);
+  studentLoginForm.reset();
+  showStudentLoginNote("");
+  finishSyncSuccess("Вход выполнен");
+  showStudentBooking();
+}
+
+async function handleStudentRegister(event) {
+  event.preventDefault();
+
+  if (!isSupabaseEnabled) {
+    showStudentRegisterNote("Для полноценной регистрации нужен подключенный сервер Supabase.", true);
+    return;
+  }
+
+  const formData = new FormData(studentRegisterForm);
+  const firstName = formData.get("firstName").trim();
+  const lastName = formData.get("lastName").trim();
+  const patronymic = formData.get("patronymic").trim();
+  const phone = formData.get("phone").trim();
+  const email = normalizeEmail(formData.get("email"));
+  const password = formData.get("studentRegisterPassword").trim();
+
+  if (!firstName || !lastName || !phone || !email || !password) {
+    showStudentRegisterNote("Заполните имя, фамилию, телефон, email и пароль.", true);
+    return;
+  }
+
+  if (password.length < MIN_PASSWORD_LENGTH) {
+    showStudentRegisterNote(getPasswordErrorMessage(), true);
+    return;
+  }
+
+  if (!validatePhone(phone)) {
+    showStudentRegisterNote(getPhoneErrorMessage(), true);
+    return;
+  }
+
+  if (!isValidEmail(email)) {
+    showStudentRegisterNote(getEmailErrorMessage(), true);
+    return;
+  }
+
+  if (getStudentByEmail(email)) {
+    showStudentRegisterNote("Этот email уже зарегистрирован. Попробуйте войти.", true);
+    return;
+  }
+
+  if (getStudentByPhone(phone)) {
+    showStudentRegisterNote("Этот телефон уже привязан к другому кабинету ученика.", true);
+    return;
+  }
+
+  if (!state.studentsSchemaReady) {
+    showStudentRegisterNote("Нужно обновить SQL-схему Supabase: добавить таблицу students.", true);
+    return;
+  }
+
+  startSyncStatus("Создаем кабинет ученика");
+
+  const formattedPhone = formatPhone(phone);
+  const { data, error } = await supabaseClient.auth.signUp({
+    email,
+    password,
+    options: {
+      data: {
+        role: "student",
+        first_name: firstName,
+        last_name: lastName,
+        patronymic,
+        phone: formattedPhone,
+      },
+    },
+  });
+
+  if (error) {
+    showSyncIdleStatus();
+    showStudentRegisterNote(getAuthErrorMessage(error), true);
+    return;
+  }
+
+  const student = normalizeStudent({
+    id: data.user?.id || createId("student"),
+    firstName,
+    lastName,
+    patronymic,
+    phone: formattedPhone,
+    email,
+    createdAt: new Date().toISOString(),
+  });
+
+  state.students.push(student);
+  const isSaved = await saveStudents();
+
+  if (!isSaved) {
+    showStudentRegisterNote("Кабинет создан, но профиль не сохранился в таблицу. Попробуйте обновить страницу.", true);
+    return;
+  }
+
+  studentRegisterForm.reset();
+
+  if (!data.session) {
+    showSyncIdleStatus();
+    showStudentRegisterNote("Кабинет создан. Проверьте email и подтвердите регистрацию, затем войдите.", false);
+    return;
+  }
+
+  setStudentSession(student.id);
+  finishSyncSuccess("Кабинет ученика создан");
+  showStudentRegisterNote("");
+  showStudentBooking();
+}
+
 async function handleLogin(event) {
   event.preventDefault();
 
@@ -1915,6 +2387,11 @@ async function handleLogin(event) {
       }
 
       showLoginNote("Введите email или логин зарегистрированного инструктора.", true);
+      return;
+    }
+
+    if (getStudentByEmail(authEmail) && !instructor) {
+      showLoginNote("Этот email привязан к кабинету ученика. Для инструктора нужен отдельный кабинет.", true);
       return;
     }
 
@@ -2025,6 +2502,7 @@ async function handleRegister(event) {
     password,
     options: {
       data: {
+        role: "instructor",
         login,
         first_name: firstName,
         last_name: lastName,
@@ -2076,16 +2554,27 @@ async function handleRegister(event) {
   showInstructorDashboard();
 }
 
-studentEntry?.addEventListener("click", showStudentBooking);
+studentEntry?.addEventListener("click", openStudentFlow);
 instructorEntry?.addEventListener("click", openInstructorFlow);
 backHomeButtons.forEach((button) => button.addEventListener("click", showRoleChoice));
+showStudentRegister?.addEventListener("click", showStudentRegisterMode);
+showStudentLogin?.addEventListener("click", showStudentLoginMode);
 showRegister?.addEventListener("click", showRegisterMode);
 showLogin?.addEventListener("click", showLoginMode);
+studentLoginForm?.addEventListener("submit", handleStudentLogin);
+studentRegisterForm?.addEventListener("submit", handleStudentRegister);
 loginForm?.addEventListener("submit", handleLogin);
 registerForm?.addEventListener("submit", handleRegister);
 logoutInstructor?.addEventListener("click", () => {
   setInstructorSession(null);
   showRoleChoice();
+});
+logoutStudent?.addEventListener("click", () => {
+  setStudentSession(null);
+  if (isSupabaseEnabled) {
+    supabaseClient.auth.signOut();
+  }
+  showStudentLoginScreen();
 });
 
 studentInstructorFilter?.addEventListener("change", () => {
@@ -2285,7 +2774,7 @@ async function initApp() {
   render();
 
   if (window.location.hash === "#student") {
-    showStudentBooking();
+    openStudentFlow();
   } else if (window.location.hash === "#instructor") {
     openInstructorFlow();
   } else {
