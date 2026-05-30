@@ -49,6 +49,90 @@ button {
   margin: 24px auto 40px;
 }
 
+.sync-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: max-content;
+  max-width: 100%;
+  min-height: 34px;
+  margin: 0 0 12px auto;
+  padding: 7px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.86);
+  color: var(--muted);
+  font-size: 0.9rem;
+  font-weight: 800;
+  box-shadow: 0 10px 26px rgba(29, 43, 35, 0.08);
+  transition:
+    border-color 180ms ease,
+    color 180ms ease,
+    background 180ms ease,
+    transform 180ms ease;
+}
+
+.sync-status__dot {
+  width: 9px;
+  height: 9px;
+  flex: 0 0 9px;
+  border-radius: 999px;
+  background: var(--muted);
+}
+
+.sync-status[data-status="checking"],
+.sync-status[data-status="syncing"] {
+  border-color: rgba(182, 106, 26, 0.28);
+  color: var(--warning);
+  background: #fffaf0;
+}
+
+.sync-status[data-status="checking"] .sync-status__dot,
+.sync-status[data-status="syncing"] .sync-status__dot {
+  background: var(--warning);
+  animation: syncPulse 1.2s ease-in-out infinite;
+}
+
+.sync-status[data-status="online"],
+.sync-status[data-status="saved"] {
+  border-color: rgba(31, 122, 90, 0.24);
+  color: var(--accent-dark);
+  background: #f1fbf6;
+}
+
+.sync-status[data-status="online"] .sync-status__dot,
+.sync-status[data-status="saved"] .sync-status__dot {
+  background: var(--accent);
+}
+
+.sync-status[data-status="local"] {
+  background: var(--surface-strong);
+}
+
+.sync-status[data-status="error"] {
+  border-color: rgba(178, 59, 59, 0.28);
+  color: var(--danger);
+  background: #fff5f5;
+  transform: translateY(-1px);
+}
+
+.sync-status[data-status="error"] .sync-status__dot {
+  background: var(--danger);
+}
+
+@keyframes syncPulse {
+  0%,
+  100% {
+    opacity: 0.48;
+    transform: scale(0.86);
+  }
+
+  50% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
 .top-bar {
   display: flex;
   align-items: center;
@@ -1094,6 +1178,12 @@ textarea:focus {
   .app-shell {
     width: min(100% - 18px, 1180px);
     margin-top: 9px;
+  }
+
+  .sync-status {
+    width: 100%;
+    justify-content: center;
+    margin-bottom: 8px;
   }
 
   .visual-panel,

@@ -40,6 +40,8 @@ const state = {
   currentInstructorId: localStorage.getItem(INSTRUCTOR_SESSION_KEY),
 };
 
+const syncStatus = document.querySelector("#syncStatus");
+const syncStatusText = syncStatus?.querySelector(".sync-status__text");
 const roleView = document.querySelector("#roleView");
 const studentEntry = document.querySelector("#studentEntry");
 const instructorEntry = document.querySelector("#instructorEntry");
@@ -115,6 +117,65 @@ const compactDateFormatter = new Intl.DateTimeFormat("ru-RU", {
   day: "numeric",
   month: "short",
 });
+
+const syncUiState = {
+  pending: 0,
+  idleTimer: null,
+};
+
+function setSyncStatus(status, message, detail = "") {
+  if (!syncStatus || !syncStatusText) return;
+
+  window.clearTimeout(syncUiState.idleTimer);
+  syncStatus.dataset.status = status;
+  syncStatusText.textContent = message;
+  syncStatus.title = detail;
+}
+
+function describeSyncError(error) {
+  return error?.message || error?.details || "Проверьте подключение к интернету и настройки Supabase.";
+}
+
+function showSyncIdleStatus() {
+  syncUiState.pending = 0;
+
+  if (isSupabaseEnabled) {
+    setSyncStatus("online", "Сервер подключен");
+    return;
+  }
+
+  setSyncStatus("local", "Локальный режим", "Supabase не подключен, данные сохраняются только в этом браузере.");
+}
+
+function startSyncStatus(message = "Синхронизация") {
+  if (!isSupabaseEnabled) {
+    showSyncIdleStatus();
+    return false;
+  }
+
+  syncUiState.pending += 1;
+  setSyncStatus("syncing", message);
+  return true;
+}
+
+function finishSyncSuccess(message = "Сохранено на сервере") {
+  if (!isSupabaseEnabled) return;
+
+  syncUiState.pending = Math.max(0, syncUiState.pending - 1);
+  if (syncUiState.pending > 0) return;
+
+  setSyncStatus("saved", message);
+  syncUiState.idleTimer = window.setTimeout(() => {
+    if (syncUiState.pending === 0) {
+      setSyncStatus("online", "Сервер подключен");
+    }
+  }, 2600);
+}
+
+function finishSyncError(error, message = "Ошибка синхронизации") {
+  syncUiState.pending = 0;
+  setSyncStatus("error", message, describeSyncError(error));
+}
 
 function loadBookings() {
   try {
@@ -244,8 +305,11 @@ function mapBookingToRow(booking) {
 
 async function loadSupabaseState() {
   if (!isSupabaseEnabled) {
+    showSyncIdleStatus();
     return;
   }
+
+  startSyncStatus("Подключаем сервер");
 
   try {
     const localInstructors = [...state.instructors];
@@ -281,8 +345,11 @@ async function loadSupabaseState() {
     if (state.currentInstructorId && !getCurrentInstructor()) {
       setInstructorSession(null);
     }
+    syncUiState.pending = 0;
+    setSyncStatus("online", "Сервер подключен");
   } catch (error) {
     console.error("Supabase load failed", error);
+    finishSyncError(error, "Ошибка подключения");
   }
 }
 
@@ -290,8 +357,11 @@ async function syncInstructorsToSupabase() {
   const instructorsToSync = state.instructors.filter(isVisibleInstructor);
 
   if (!isSupabaseEnabled || instructorsToSync.length === 0) {
+    showSyncIdleStatus();
     return;
   }
+
+  startSyncStatus("Сохраняем инструкторов");
 
   try {
     const { error } = await supabaseClient
@@ -299,15 +369,20 @@ async function syncInstructorsToSupabase() {
       .upsert(instructorsToSync.map(mapInstructorToRow), { onConflict: "id" });
 
     if (error) throw error;
+    finishSyncSuccess("Инструкторы сохранены");
   } catch (error) {
     console.error("Supabase instructors sync failed", error);
+    finishSyncError(error);
   }
 }
 
 async function syncBookingsToSupabase() {
   if (!isSupabaseEnabled || state.bookings.length === 0) {
+    showSyncIdleStatus();
     return;
   }
+
+  startSyncStatus("Сохраняем заявки");
 
   try {
     const { error } = await supabaseClient
@@ -315,34 +390,46 @@ async function syncBookingsToSupabase() {
       .upsert(state.bookings.map(mapBookingToRow), { onConflict: "id" });
 
     if (error) throw error;
+    finishSyncSuccess("Заявки сохранены");
   } catch (error) {
     console.error("Supabase bookings sync failed", error);
+    finishSyncError(error);
   }
 }
 
 async function deleteBookingFromSupabase(id) {
   if (!isSupabaseEnabled) {
+    showSyncIdleStatus();
     return;
   }
+
+  startSyncStatus("Удаляем заявку");
 
   try {
     const { error } = await supabaseClient.from("bookings").delete().eq("id", id);
     if (error) throw error;
+    finishSyncSuccess("Заявка удалена");
   } catch (error) {
     console.error("Supabase booking delete failed", error);
+    finishSyncError(error);
   }
 }
 
 async function deleteInstructorBookingsFromSupabase(instructorId) {
   if (!isSupabaseEnabled) {
+    showSyncIdleStatus();
     return;
   }
+
+  startSyncStatus("Очищаем журнал");
 
   try {
     const { error } = await supabaseClient.from("bookings").delete().eq("instructor_id", instructorId);
     if (error) throw error;
+    finishSyncSuccess("Журнал очищен");
   } catch (error) {
     console.error("Supabase instructor bookings clear failed", error);
+    finishSyncError(error);
   }
 }
 

@@ -8,6 +8,11 @@
   </head>
   <body data-page="app">
     <main class="app-shell">
+      <div class="sync-status" id="syncStatus" data-status="checking" role="status" aria-live="polite">
+        <span class="sync-status__dot" aria-hidden="true"></span>
+        <span class="sync-status__text">Проверяем сервер</span>
+      </div>
+
       <section class="role-view" id="roleView" aria-labelledby="role-title">
         <div class="visual-panel role-hero" aria-label="Учебный автомобиль">
           <img src="assets/driving-header.png" alt="Салон учебного автомобиля" />
@@ -158,7 +163,7 @@
             <button class="primary-action" type="submit">Зарегистрироваться</button>
             <button id="showLogin" type="button">Уже есть кабинет</button>
           </div>
-          <p class="form-note muted-note">Пока данные хранятся в браузере этого устройства. Для настоящей базы подключим backend следующим шагом.</p>
+          <p class="form-note muted-note">Кабинет сохраняется на сервере, а локальная копия остается в браузере для быстрого входа.</p>
           <p class="form-note" id="registerNote" role="status"></p>
         </form>
       </section>
