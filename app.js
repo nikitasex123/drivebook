@@ -22,6 +22,11 @@ const DEFAULT_NOTIFICATIONS = {
   reminderHours: 24,
 };
 const WEEKDAY_NAMES = ["Вс", "Пн", "Вт", "Ср", "Чт", "Пт", "Сб"];
+const SUPABASE_CONFIG = window.DRIVEBOOK_SUPABASE ?? {};
+const supabaseClient = SUPABASE_CONFIG.url && SUPABASE_CONFIG.anonKey && window.supabase
+  ? window.supabase.createClient(SUPABASE_CONFIG.url, SUPABASE_CONFIG.anonKey)
+  : null;
+const isSupabaseEnabled = Boolean(supabaseClient);
 
 const state = {
   activeDate: null,
@@ -138,10 +143,184 @@ function loadInstructors() {
 
 function saveBookings() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state.bookings));
+  return syncBookingsToSupabase();
 }
 
 function saveInstructors() {
   localStorage.setItem(INSTRUCTORS_KEY, JSON.stringify(state.instructors));
+  return syncInstructorsToSupabase();
+}
+
+function mapInstructorFromRow(row) {
+  return normalizeInstructor({
+    id: row.id,
+    firstName: row.first_name,
+    lastName: row.last_name,
+    patronymic: row.patronymic,
+    phone: row.phone,
+    email: row.email,
+    login: row.login,
+    password: row.password,
+    schedule: row.schedule,
+    notifications: row.notifications,
+    createdAt: row.created_at,
+  });
+}
+
+function mapInstructorToRow(instructor) {
+  return {
+    id: instructor.id,
+    first_name: instructor.firstName,
+    last_name: instructor.lastName,
+    patronymic: instructor.patronymic,
+    phone: instructor.phone,
+    email: instructor.email,
+    login: instructor.login,
+    password: instructor.password,
+    schedule: instructor.schedule,
+    notifications: instructor.notifications,
+    created_at: instructor.createdAt,
+  };
+}
+
+function normalizeBooking(booking) {
+  return {
+    id: String(booking.id ?? createId("booking")),
+    date: String(booking.date ?? "").slice(0, 10),
+    time: String(booking.time ?? "").slice(0, 5),
+    name: String(booking.name ?? "").trim(),
+    phone: String(booking.phone ?? "").trim(),
+    email: String(booking.email ?? "").trim(),
+    instructorId: booking.instructorId ?? booking.instructor_id ?? "",
+    instructorName: booking.instructorName ?? booking.instructor_name ?? booking.instructor ?? "Инструктор не назначен",
+    instructor: booking.instructor ?? booking.instructorName ?? booking.instructor_name ?? "Инструктор не назначен",
+    comment: String(booking.comment ?? "").trim(),
+    mailing: Boolean(booking.mailing),
+    createdAt: booking.createdAt ?? booking.created_at ?? new Date().toISOString(),
+    updatedAt: booking.updatedAt ?? booking.updated_at ?? null,
+  };
+}
+
+function mapBookingFromRow(row) {
+  return normalizeBooking({
+    id: row.id,
+    date: row.lesson_date,
+    time: row.lesson_time,
+    name: row.student_name,
+    phone: row.phone,
+    email: row.email,
+    instructorId: row.instructor_id,
+    instructorName: row.instructor_name,
+    instructor: row.instructor_name,
+    comment: row.comment,
+    mailing: row.mailing,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  });
+}
+
+function mapBookingToRow(booking) {
+  const normalized = normalizeBooking(booking);
+  return {
+    id: normalized.id,
+    lesson_date: normalized.date,
+    lesson_time: normalized.time,
+    student_name: normalized.name,
+    phone: normalized.phone,
+    email: normalized.email,
+    instructor_id: normalized.instructorId,
+    instructor_name: normalized.instructorName,
+    comment: normalized.comment,
+    mailing: normalized.mailing,
+    created_at: normalized.createdAt,
+    updated_at: normalized.updatedAt,
+  };
+}
+
+async function loadSupabaseState() {
+  if (!isSupabaseEnabled) {
+    return;
+  }
+
+  try {
+    const [instructorsResult, bookingsResult] = await Promise.all([
+      supabaseClient.from("instructors").select("*").order("created_at", { ascending: true }),
+      supabaseClient.from("bookings").select("*").order("lesson_date", { ascending: true }).order("lesson_time", { ascending: true }),
+    ]);
+
+    if (instructorsResult.error) throw instructorsResult.error;
+    if (bookingsResult.error) throw bookingsResult.error;
+
+    state.instructors = instructorsResult.data.map(mapInstructorFromRow).filter(Boolean);
+    state.bookings = bookingsResult.data.map(mapBookingFromRow);
+
+    localStorage.setItem(INSTRUCTORS_KEY, JSON.stringify(state.instructors));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state.bookings));
+
+    if (state.currentInstructorId && !getCurrentInstructor()) {
+      setInstructorSession(null);
+    }
+  } catch (error) {
+    console.error("Supabase load failed", error);
+  }
+}
+
+async function syncInstructorsToSupabase() {
+  if (!isSupabaseEnabled || state.instructors.length === 0) {
+    return;
+  }
+
+  try {
+    const { error } = await supabaseClient
+      .from("instructors")
+      .upsert(state.instructors.map(mapInstructorToRow), { onConflict: "id" });
+
+    if (error) throw error;
+  } catch (error) {
+    console.error("Supabase instructors sync failed", error);
+  }
+}
+
+async function syncBookingsToSupabase() {
+  if (!isSupabaseEnabled || state.bookings.length === 0) {
+    return;
+  }
+
+  try {
+    const { error } = await supabaseClient
+      .from("bookings")
+      .upsert(state.bookings.map(mapBookingToRow), { onConflict: "id" });
+
+    if (error) throw error;
+  } catch (error) {
+    console.error("Supabase bookings sync failed", error);
+  }
+}
+
+async function deleteBookingFromSupabase(id) {
+  if (!isSupabaseEnabled) {
+    return;
+  }
+
+  try {
+    const { error } = await supabaseClient.from("bookings").delete().eq("id", id);
+    if (error) throw error;
+  } catch (error) {
+    console.error("Supabase booking delete failed", error);
+  }
+}
+
+async function deleteInstructorBookingsFromSupabase(instructorId) {
+  if (!isSupabaseEnabled) {
+    return;
+  }
+
+  try {
+    const { error } = await supabaseClient.from("bookings").delete().eq("instructor_id", instructorId);
+    if (error) throw error;
+  } catch (error) {
+    console.error("Supabase instructor bookings clear failed", error);
+  }
 }
 
 function normalizeSettings(settings) {
@@ -1291,6 +1470,7 @@ function deleteBooking(id) {
   }
 
   saveBookings();
+  deleteBookingFromSupabase(id);
   showAdminNote("Заявка удалена.");
   render();
 }
@@ -1585,6 +1765,7 @@ clearDemo?.addEventListener("click", () => {
   state.selectedSlot = null;
   state.editingId = null;
   saveBookings();
+  deleteInstructorBookingsFromSupabase(currentInstructor.id);
   showAdminNote("Журнал очищен.");
   render();
   closeDrawer(editDrawer);
@@ -1679,12 +1860,17 @@ viewButtons.forEach((button) => {
   });
 });
 
-render();
+async function initApp() {
+  await loadSupabaseState();
+  render();
 
-if (window.location.hash === "#student") {
-  showStudentBooking();
-} else if (window.location.hash === "#instructor") {
-  openInstructorFlow();
-} else {
-  showAppScreen("role");
+  if (window.location.hash === "#student") {
+    showStudentBooking();
+  } else if (window.location.hash === "#instructor") {
+    openInstructorFlow();
+  } else {
+    showAppScreen("role");
+  }
 }
+
+initApp();
