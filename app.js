@@ -6,6 +6,20 @@ const ANY_INSTRUCTOR_ID = "any";
 const INTERNAL_TEST_INSTRUCTOR_IDS = new Set(["codex-test-instructor"]);
 const DAY_COUNT = 7;
 const DRAWER_TRANSITION_MS = 300;
+const MIN_PASSWORD_LENGTH = 8;
+const BLOCKED_EMAIL_DOMAINS = new Set([
+  "example.com",
+  "example.net",
+  "example.org",
+  "test.com",
+  "test.ru",
+  "localhost",
+  "mailinator.com",
+  "10minutemail.com",
+  "tempmail.com",
+  "temp-mail.org",
+]);
+const BLOCKED_EMAIL_NAMES = new Set(["test", "fake", "qwe", "qwerty", "asdf", "mail"]);
 const DEFAULT_SETTINGS = {
   workDays: [1, 2, 3, 4, 5, 6],
   startTime: "09:00",
@@ -358,7 +372,7 @@ async function syncInstructorsToSupabase() {
 
   if (!isSupabaseEnabled || instructorsToSync.length === 0) {
     showSyncIdleStatus();
-    return;
+    return true;
   }
 
   startSyncStatus("Сохраняем инструкторов");
@@ -370,16 +384,18 @@ async function syncInstructorsToSupabase() {
 
     if (error) throw error;
     finishSyncSuccess("Инструкторы сохранены");
+    return true;
   } catch (error) {
     console.error("Supabase instructors sync failed", error);
     finishSyncError(error);
+    return false;
   }
 }
 
 async function syncBookingsToSupabase() {
   if (!isSupabaseEnabled || state.bookings.length === 0) {
     showSyncIdleStatus();
-    return;
+    return true;
   }
 
   startSyncStatus("Сохраняем заявки");
@@ -391,16 +407,18 @@ async function syncBookingsToSupabase() {
 
     if (error) throw error;
     finishSyncSuccess("Заявки сохранены");
+    return true;
   } catch (error) {
     console.error("Supabase bookings sync failed", error);
     finishSyncError(error);
+    return false;
   }
 }
 
 async function deleteBookingFromSupabase(id) {
   if (!isSupabaseEnabled) {
     showSyncIdleStatus();
-    return;
+    return true;
   }
 
   startSyncStatus("Удаляем заявку");
@@ -409,16 +427,18 @@ async function deleteBookingFromSupabase(id) {
     const { error } = await supabaseClient.from("bookings").delete().eq("id", id);
     if (error) throw error;
     finishSyncSuccess("Заявка удалена");
+    return true;
   } catch (error) {
     console.error("Supabase booking delete failed", error);
     finishSyncError(error);
+    return false;
   }
 }
 
 async function deleteInstructorBookingsFromSupabase(instructorId) {
   if (!isSupabaseEnabled) {
     showSyncIdleStatus();
-    return;
+    return true;
   }
 
   startSyncStatus("Очищаем журнал");
@@ -427,9 +447,11 @@ async function deleteInstructorBookingsFromSupabase(instructorId) {
     const { error } = await supabaseClient.from("bookings").delete().eq("instructor_id", instructorId);
     if (error) throw error;
     finishSyncSuccess("Журнал очищен");
+    return true;
   } catch (error) {
     console.error("Supabase instructor bookings clear failed", error);
     finishSyncError(error);
+    return false;
   }
 }
 
@@ -513,6 +535,92 @@ function normalizeLogin(value) {
   return String(value ?? "").trim().toLowerCase();
 }
 
+function normalizeEmail(value) {
+  return String(value ?? "").trim().toLowerCase();
+}
+
+function isValidEmail(value) {
+  const email = normalizeEmail(value);
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) {
+    return false;
+  }
+
+  const [name, domain] = email.split("@");
+  if (!name || !domain || BLOCKED_EMAIL_DOMAINS.has(domain) || BLOCKED_EMAIL_NAMES.has(name)) {
+    return false;
+  }
+
+  if (/^([a-z0-9])\1{4,}$/i.test(name)) {
+    return false;
+  }
+
+  return true;
+}
+
+function normalizePhone(value) {
+  let digits = String(value ?? "").replace(/\D/g, "");
+
+  if (digits.length === 10 && digits.startsWith("9")) {
+    digits = `7${digits}`;
+  }
+
+  if (digits.length === 11 && digits.startsWith("8")) {
+    digits = `7${digits.slice(1)}`;
+  }
+
+  if (digits.length !== 11 || !digits.startsWith("79")) {
+    return "";
+  }
+
+  return `+${digits}`;
+}
+
+function isLikelyFakePhone(value) {
+  const digits = normalizePhone(value).replace(/\D/g, "");
+  const localNumber = digits.slice(1);
+
+  if (!localNumber) {
+    return true;
+  }
+
+  if (/^(\d)\1{8,}$/.test(localNumber)) {
+    return true;
+  }
+
+  return [
+    "9000000000",
+    "9999999999",
+    "9876543210",
+    "1234567890",
+    "9001234567",
+    "9123456789",
+  ].includes(localNumber);
+}
+
+function isValidPhone(value) {
+  const phone = normalizePhone(value);
+  return Boolean(phone) && !isLikelyFakePhone(phone);
+}
+
+function formatPhone(value) {
+  const phone = normalizePhone(value);
+  if (!phone) {
+    return String(value ?? "").trim();
+  }
+
+  return phone.replace(/^\+7(\d{3})(\d{3})(\d{2})(\d{2})$/, "+7 $1 $2-$3-$4");
+}
+
+function getInstructorByEmail(email) {
+  const normalizedEmail = normalizeEmail(email);
+  return state.instructors.find((instructor) => normalizeEmail(instructor.email) === normalizedEmail) ?? null;
+}
+
+function getInstructorByPhone(phone) {
+  const normalizedPhone = normalizePhone(phone);
+  return state.instructors.find((instructor) => normalizePhone(instructor.phone) === normalizedPhone) ?? null;
+}
+
 function normalizeInstructor(instructor) {
   if (!instructor || typeof instructor !== "object") {
     return null;
@@ -531,8 +639,8 @@ function normalizeInstructor(instructor) {
     firstName,
     lastName,
     patronymic: String(instructor.patronymic ?? "").trim(),
-    phone: String(instructor.phone ?? "").trim(),
-    email: String(instructor.email ?? "").trim(),
+    phone: normalizePhone(instructor.phone) ? formatPhone(instructor.phone) : String(instructor.phone ?? "").trim(),
+    email: normalizeEmail(instructor.email),
     login,
     password: String(instructor.password ?? ""),
     schedule: normalizeSettings(instructor.schedule),
@@ -1422,8 +1530,82 @@ function showRegisterNote(message, isError = false) {
 }
 
 function validatePhone(value) {
-  const digits = value.replace(/\D/g, "");
-  return digits.length >= 10;
+  return isValidPhone(value);
+}
+
+function getPhoneErrorMessage() {
+  return "Введите реальный российский мобильный номер в формате +7 9XX XXX-XX-XX.";
+}
+
+function getEmailErrorMessage() {
+  return "Введите рабочий email, не тестовый адрес и не временную почту.";
+}
+
+function getPasswordErrorMessage() {
+  return `Пароль должен быть не короче ${MIN_PASSWORD_LENGTH} символов.`;
+}
+
+function getInstructorByLoginOrEmail(value) {
+  return getInstructorByLogin(value) || getInstructorByEmail(value);
+}
+
+function getAuthErrorMessage(error) {
+  const message = String(error?.message ?? "").toLowerCase();
+
+  if (message.includes("invalid login credentials")) {
+    return "Неверный email, логин или пароль.";
+  }
+
+  if (message.includes("email not confirmed")) {
+    return "Сначала подтвердите email по ссылке из письма.";
+  }
+
+  if (message.includes("already registered") || message.includes("already been registered")) {
+    return "Этот email уже зарегистрирован. Попробуйте войти.";
+  }
+
+  if (message.includes("password")) {
+    return getPasswordErrorMessage();
+  }
+
+  return "Не удалось выполнить действие. Проверьте данные и попробуйте еще раз.";
+}
+
+function getAuthProfileFromUser(user) {
+  const metadata = user?.user_metadata ?? {};
+  const firstName = String(metadata.firstName ?? metadata.first_name ?? "").trim();
+  const lastName = String(metadata.lastName ?? metadata.last_name ?? "").trim();
+  const email = normalizeEmail(user?.email ?? metadata.email);
+  const login = normalizeLogin(metadata.login || email.split("@")[0]);
+
+  if (!user?.id || !firstName || !lastName || !email || !login) {
+    return null;
+  }
+
+  return normalizeInstructor({
+    id: user.id,
+    firstName,
+    lastName,
+    patronymic: metadata.patronymic,
+    phone: metadata.phone,
+    email,
+    login,
+    password: "",
+    schedule: loadLegacySettings(),
+    notifications: { ...DEFAULT_NOTIFICATIONS },
+    createdAt: new Date().toISOString(),
+  });
+}
+
+function canUseLegacyPassword(instructor, password) {
+  return Boolean(instructor?.password) && instructor.password === password;
+}
+
+function completeInstructorLogin(instructor) {
+  setInstructorSession(instructor.id);
+  loginForm.reset();
+  showLoginNote("");
+  showInstructorDashboard();
 }
 
 function handleSubmit(event) {
@@ -1450,10 +1632,21 @@ function handleSubmit(event) {
   const formData = new FormData(bookingForm);
   const name = formData.get("studentName").trim();
   const phone = formData.get("phone").trim();
-  const email = formData.get("email").trim();
+  const email = normalizeEmail(formData.get("email"));
+  const mailing = formData.get("mailing") === "on";
 
   if (!validatePhone(phone)) {
-    showNote("Проверьте телефон: нужно минимум 10 цифр.", true);
+    showNote(getPhoneErrorMessage(), true);
+    return;
+  }
+
+  if (email && !isValidEmail(email)) {
+    showNote(getEmailErrorMessage(), true);
+    return;
+  }
+
+  if (mailing && !email) {
+    showNote("Для email-напоминаний укажите email.", true);
     return;
   }
 
@@ -1463,13 +1656,13 @@ function handleSubmit(event) {
     date: state.selectedSlot.date,
     time: state.selectedSlot.time,
     name,
-    phone,
+    phone: formatPhone(phone),
     email,
     instructorId: assignedInstructor.id,
     instructorName,
     instructor: instructorName,
     comment: formData.get("comment").trim(),
-    mailing: formData.get("mailing") === "on",
+    mailing,
     createdAt: new Date().toISOString(),
   };
 
@@ -1519,7 +1712,8 @@ function updateBooking(event) {
   const instructor = getInstructorById(instructorId);
   const name = formData.get("editName").trim();
   const phone = formData.get("editPhone").trim();
-  const email = formData.get("editEmail").trim();
+  const email = normalizeEmail(formData.get("editEmail"));
+  const mailing = formData.get("editMailing") === "on";
 
   if (!instructor) {
     showEditNote("Выберите зарегистрированного инструктора.", true);
@@ -1527,7 +1721,17 @@ function updateBooking(event) {
   }
 
   if (!validatePhone(phone)) {
-    showEditNote("Проверьте телефон: нужно минимум 10 цифр.", true);
+    showEditNote(getPhoneErrorMessage(), true);
+    return;
+  }
+
+  if (email && !isValidEmail(email)) {
+    showEditNote(getEmailErrorMessage(), true);
+    return;
+  }
+
+  if (mailing && !email) {
+    showEditNote("Для email-напоминаний укажите email.", true);
     return;
   }
 
@@ -1546,13 +1750,13 @@ function updateBooking(event) {
     date,
     time,
     name,
-    phone,
+    phone: formatPhone(phone),
     email,
     instructorId: instructor.id,
     instructorName,
     instructor: instructorName,
     comment: formData.get("editComment").trim(),
-    mailing: formData.get("editMailing") === "on",
+    mailing,
     updatedAt: new Date().toISOString(),
   });
 
@@ -1693,26 +1897,75 @@ function handleSettingsSubmit(event) {
   render();
 }
 
-function handleLogin(event) {
+async function handleLogin(event) {
   event.preventDefault();
 
   const formData = new FormData(loginForm);
-  const login = formData.get("loginName").trim();
+  const login = normalizeLogin(formData.get("loginName"));
   const password = formData.get("loginPassword").trim();
-  const instructor = getInstructorByLogin(login);
+  const instructor = getInstructorByLoginOrEmail(login);
 
-  if (!instructor || instructor.password !== password) {
+  if (isSupabaseEnabled) {
+    const authEmail = normalizeEmail(instructor?.email || login);
+
+    if (!isValidEmail(authEmail)) {
+      if (canUseLegacyPassword(instructor, password)) {
+        completeInstructorLogin(instructor);
+        return;
+      }
+
+      showLoginNote("Введите email или логин зарегистрированного инструктора.", true);
+      return;
+    }
+
+    startSyncStatus("Проверяем вход");
+
+    const { data, error } = await supabaseClient.auth.signInWithPassword({
+      email: authEmail,
+      password,
+    });
+
+    if (error) {
+      showSyncIdleStatus();
+      if (canUseLegacyPassword(instructor, password)) {
+        completeInstructorLogin(instructor);
+        return;
+      }
+
+      showLoginNote(getAuthErrorMessage(error), true);
+      return;
+    }
+
+    let authInstructor = getInstructorById(data.user.id) || getInstructorByEmail(authEmail) || instructor;
+
+    if (!authInstructor) {
+      authInstructor = getAuthProfileFromUser(data.user);
+      if (authInstructor) {
+        state.instructors.push(authInstructor);
+        await saveInstructors();
+      }
+    }
+
+    if (!authInstructor) {
+      showSyncIdleStatus();
+      showLoginNote("Вход выполнен, но профиль инструктора не найден.", true);
+      return;
+    }
+
+    completeInstructorLogin(authInstructor);
+    finishSyncSuccess("Вход выполнен");
+    return;
+  }
+
+  if (!canUseLegacyPassword(instructor, password)) {
     showLoginNote("Неверный логин или пароль.", true);
     return;
   }
 
-  setInstructorSession(instructor.id);
-  loginForm.reset();
-  showLoginNote("");
-  showInstructorDashboard();
+  completeInstructorLogin(instructor);
 }
 
-function handleRegister(event) {
+async function handleRegister(event) {
   event.preventDefault();
 
   const formData = new FormData(registerForm);
@@ -1720,22 +1973,32 @@ function handleRegister(event) {
   const lastName = formData.get("lastName").trim();
   const patronymic = formData.get("patronymic").trim();
   const phone = formData.get("phone").trim();
-  const email = formData.get("email").trim();
+  const email = normalizeEmail(formData.get("email"));
   const login = normalizeLogin(formData.get("registerLogin"));
   const password = formData.get("registerPassword").trim();
 
-  if (!firstName || !lastName || !login || !password) {
-    showRegisterNote("Заполните имя, фамилию, логин и пароль.", true);
+  if (!isSupabaseEnabled) {
+    showRegisterNote("Для полноценной регистрации нужен подключенный сервер Supabase.", true);
     return;
   }
 
-  if (password.length < 4) {
-    showRegisterNote("Пароль должен быть не короче 4 символов.", true);
+  if (!firstName || !lastName || !login || !phone || !email || !password) {
+    showRegisterNote("Заполните имя, фамилию, телефон, email, логин и пароль.", true);
     return;
   }
 
-  if (phone && !validatePhone(phone)) {
-    showRegisterNote("Проверьте телефон: нужно минимум 10 цифр.", true);
+  if (password.length < MIN_PASSWORD_LENGTH) {
+    showRegisterNote(getPasswordErrorMessage(), true);
+    return;
+  }
+
+  if (!validatePhone(phone)) {
+    showRegisterNote(getPhoneErrorMessage(), true);
+    return;
+  }
+
+  if (!isValidEmail(email)) {
+    showRegisterNote(getEmailErrorMessage(), true);
     return;
   }
 
@@ -1744,24 +2007,71 @@ function handleRegister(event) {
     return;
   }
 
+  if (getInstructorByEmail(email)) {
+    showRegisterNote("Этот email уже зарегистрирован. Попробуйте войти.", true);
+    return;
+  }
+
+  if (getInstructorByPhone(phone)) {
+    showRegisterNote("Этот телефон уже привязан к другому кабинету.", true);
+    return;
+  }
+
+  startSyncStatus("Создаем кабинет");
+
+  const formattedPhone = formatPhone(phone);
+  const { data, error } = await supabaseClient.auth.signUp({
+    email,
+    password,
+    options: {
+      data: {
+        login,
+        first_name: firstName,
+        last_name: lastName,
+        patronymic,
+        phone: formattedPhone,
+      },
+    },
+  });
+
+  if (error) {
+    showSyncIdleStatus();
+    showRegisterNote(getAuthErrorMessage(error), true);
+    return;
+  }
+
   const instructor = {
-    id: createId("instructor"),
+    id: data.user?.id || createId("instructor"),
     firstName,
     lastName,
     patronymic,
-    phone,
+    phone: formattedPhone,
     email,
     login,
-    password,
+    password: "",
     schedule: loadLegacySettings(),
     notifications: { ...DEFAULT_NOTIFICATIONS },
     createdAt: new Date().toISOString(),
   };
 
   state.instructors.push(instructor);
-  saveInstructors();
-  setInstructorSession(instructor.id);
+  const isSaved = await saveInstructors();
+
+  if (!isSaved) {
+    showRegisterNote("Кабинет создан, но профиль не сохранился в таблицу. Попробуйте обновить страницу.", true);
+    return;
+  }
+
   registerForm.reset();
+
+  if (!data.session) {
+    showSyncIdleStatus();
+    showRegisterNote("Кабинет создан. Проверьте email и подтвердите регистрацию, затем войдите.", false);
+    return;
+  }
+
+  setInstructorSession(instructor.id);
+  finishSyncSuccess("Кабинет создан");
   showRegisterNote("");
   showInstructorDashboard();
 }

@@ -95,8 +95,8 @@
           </div>
 
           <label>
-            Логин
-            <input id="loginName" name="loginName" autocomplete="username" required placeholder="ivanov" />
+            Логин или email
+            <input id="loginName" name="loginName" autocomplete="username" required placeholder="ivanov или name@example.com" />
           </label>
 
           <label>
@@ -138,12 +138,12 @@
           <div class="settings-grid two-column">
             <label>
               Телефон
-              <input id="registerPhone" name="phone" autocomplete="tel" inputmode="tel" placeholder="+7 900 000-00-00" />
+              <input id="registerPhone" name="phone" autocomplete="tel" inputmode="tel" required placeholder="+7 900 123-45-67" />
             </label>
 
             <label>
               Email
-              <input id="registerEmail" name="email" autocomplete="email" inputmode="email" type="email" placeholder="name@example.com" />
+              <input id="registerEmail" name="email" autocomplete="email" inputmode="email" type="email" required placeholder="name@example.com" />
             </label>
           </div>
 
@@ -155,7 +155,7 @@
 
             <label>
               Пароль
-              <input id="registerPassword" name="registerPassword" autocomplete="new-password" type="password" required placeholder="Минимум 4 символа" />
+              <input id="registerPassword" name="registerPassword" autocomplete="new-password" type="password" minlength="8" required placeholder="Минимум 8 символов" />
             </label>
           </div>
 
