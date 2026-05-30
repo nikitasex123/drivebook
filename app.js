@@ -243,6 +243,8 @@ async function loadSupabaseState() {
   }
 
   try {
+    const localInstructors = [...state.instructors];
+    const localBookings = [...state.bookings];
     const [instructorsResult, bookingsResult] = await Promise.all([
       supabaseClient.from("instructors").select("*").order("created_at", { ascending: true }),
       supabaseClient.from("bookings").select("*").order("lesson_date", { ascending: true }).order("lesson_time", { ascending: true }),
@@ -251,8 +253,20 @@ async function loadSupabaseState() {
     if (instructorsResult.error) throw instructorsResult.error;
     if (bookingsResult.error) throw bookingsResult.error;
 
-    state.instructors = instructorsResult.data.map(mapInstructorFromRow).filter(Boolean);
-    state.bookings = bookingsResult.data.map(mapBookingFromRow);
+    const remoteInstructors = instructorsResult.data.map(mapInstructorFromRow).filter(Boolean);
+    const remoteBookings = bookingsResult.data.map(mapBookingFromRow);
+
+    if (remoteInstructors.length === 0 && localInstructors.length > 0) {
+      state.instructors = localInstructors;
+      state.bookings = localBookings;
+      await Promise.all([
+        syncInstructorsToSupabase(),
+        syncBookingsToSupabase(),
+      ]);
+    } else {
+      state.instructors = remoteInstructors;
+      state.bookings = remoteBookings;
+    }
 
     localStorage.setItem(INSTRUCTORS_KEY, JSON.stringify(state.instructors));
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state.bookings));
