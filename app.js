@@ -3,6 +3,7 @@ const SETTINGS_KEY = "drivingLessonSettings";
 const INSTRUCTORS_KEY = "drivingLessonInstructors";
 const INSTRUCTOR_SESSION_KEY = "driveBookInstructorSession";
 const ANY_INSTRUCTOR_ID = "any";
+const INTERNAL_TEST_INSTRUCTOR_IDS = new Set(["codex-test-instructor"]);
 const DAY_COUNT = 7;
 const DRAWER_TRANSITION_MS = 300;
 const DEFAULT_SETTINGS = {
@@ -135,10 +136,14 @@ function loadLegacySettings() {
 function loadInstructors() {
   try {
     const saved = JSON.parse(localStorage.getItem(INSTRUCTORS_KEY)) ?? [];
-    return saved.map(normalizeInstructor).filter(Boolean);
+    return saved.map(normalizeInstructor).filter(isVisibleInstructor);
   } catch {
     return [];
   }
+}
+
+function isVisibleInstructor(instructor) {
+  return Boolean(instructor) && !INTERNAL_TEST_INSTRUCTOR_IDS.has(instructor.id);
 }
 
 function saveBookings() {
@@ -253,8 +258,10 @@ async function loadSupabaseState() {
     if (instructorsResult.error) throw instructorsResult.error;
     if (bookingsResult.error) throw bookingsResult.error;
 
-    const remoteInstructors = instructorsResult.data.map(mapInstructorFromRow).filter(Boolean);
-    const remoteBookings = bookingsResult.data.map(mapBookingFromRow);
+    const remoteInstructors = instructorsResult.data.map(mapInstructorFromRow).filter(isVisibleInstructor);
+    const remoteBookings = bookingsResult.data
+      .map(mapBookingFromRow)
+      .filter((booking) => !INTERNAL_TEST_INSTRUCTOR_IDS.has(booking.instructorId));
 
     if (remoteInstructors.length === 0 && localInstructors.length > 0) {
       state.instructors = localInstructors;
@@ -280,14 +287,16 @@ async function loadSupabaseState() {
 }
 
 async function syncInstructorsToSupabase() {
-  if (!isSupabaseEnabled || state.instructors.length === 0) {
+  const instructorsToSync = state.instructors.filter(isVisibleInstructor);
+
+  if (!isSupabaseEnabled || instructorsToSync.length === 0) {
     return;
   }
 
   try {
     const { error } = await supabaseClient
       .from("instructors")
-      .upsert(state.instructors.map(mapInstructorToRow), { onConflict: "id" });
+      .upsert(instructorsToSync.map(mapInstructorToRow), { onConflict: "id" });
 
     if (error) throw error;
   } catch (error) {
