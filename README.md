@@ -38,6 +38,26 @@ python3 -m http.server 5173
 
 Чтобы войти как инструктор, сначала создайте кабинет через кнопку "Создать кабинет", затем используйте свой логин или email и пароль.
 
+## Публикация сайта
+
+Для первого теста можно использовать бесплатный адрес GitHub Pages без покупки домена:
+
+`https://nikitasex123.github.io/first-vibe-project/`
+
+В репозитории уже добавлен workflow `.github/workflows/pages.yml`. Если сайт не появился автоматически, откройте GitHub:
+
+1. **Settings -> Pages**.
+2. В блоке **Build and deployment** выберите **Source: GitHub Actions**.
+3. Запустите workflow **Deploy static site to GitHub Pages** во вкладке **Actions** или просто сделайте новый push в `main`.
+
+После публикации добавьте адрес GitHub Pages в Supabase:
+
+1. **Supabase -> Authentication -> URL Configuration**.
+2. **Site URL**: `https://nikitasex123.github.io/first-vibe-project/`.
+3. **Redirect URLs**: добавьте `https://nikitasex123.github.io/first-vibe-project/` и `https://nikitasex123.github.io/first-vibe-project/index.html`.
+
+Это нужно, чтобы письма подтверждения регистрации ученика или инструктора возвращали пользователя на опубликованный сайт.
+
 ## Supabase backend
 
 Проект умеет работать в двух режимах:
