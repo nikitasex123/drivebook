@@ -4,8 +4,10 @@ const INSTRUCTORS_KEY = "drivingLessonInstructors";
 const STUDENTS_KEY = "driveBookStudents";
 const INSTRUCTOR_SESSION_KEY = "driveBookInstructorSession";
 const STUDENT_SESSION_KEY = "driveBookStudentSession";
+const ADMIN_SESSION_KEY = "driveBookAdminSession";
 const ANY_INSTRUCTOR_ID = "any";
 const INTERNAL_TEST_INSTRUCTOR_IDS = new Set(["codex-test-instructor"]);
+const INSTRUCTOR_STATUSES = new Set(["pending", "approved", "blocked"]);
 const DAY_COUNT = 7;
 const DRAWER_TRANSITION_MS = 300;
 const MIN_PASSWORD_LENGTH = 8;
@@ -52,10 +54,13 @@ const state = {
   editingId: null,
   calendarStart: getStartOfWeek(new Date()),
   bookings: loadBookings(),
+  bookedSlots: [],
   instructors: loadInstructors(),
   students: loadStudents(),
   currentInstructorId: localStorage.getItem(INSTRUCTOR_SESSION_KEY),
   currentStudentId: localStorage.getItem(STUDENT_SESSION_KEY),
+  currentAdminId: localStorage.getItem(ADMIN_SESSION_KEY),
+  isAdmin: false,
   studentsSchemaReady: false,
 };
 
@@ -64,6 +69,7 @@ const syncStatusText = syncStatus?.querySelector(".sync-status__text");
 const roleView = document.querySelector("#roleView");
 const studentEntry = document.querySelector("#studentEntry");
 const instructorEntry = document.querySelector("#instructorEntry");
+const adminEntry = document.querySelector("#adminEntry");
 const studentLoginView = document.querySelector("#studentLoginView");
 const studentLoginForm = document.querySelector("#studentLoginForm");
 const studentRegisterForm = document.querySelector("#studentRegisterForm");
@@ -72,17 +78,23 @@ const showStudentLogin = document.querySelector("#showStudentLogin");
 const studentLoginNote = document.querySelector("#studentLoginNote");
 const studentRegisterNote = document.querySelector("#studentRegisterNote");
 const instructorLoginView = document.querySelector("#instructorLoginView");
+const adminLoginView = document.querySelector("#adminLoginView");
 const loginForm = document.querySelector("#loginForm");
+const adminLoginForm = document.querySelector("#adminLoginForm");
 const registerForm = document.querySelector("#registerForm");
 const showRegister = document.querySelector("#showRegister");
 const showLogin = document.querySelector("#showLogin");
 const loginNote = document.querySelector("#loginNote");
+const adminLoginNote = document.querySelector("#adminLoginNote");
 const registerNote = document.querySelector("#registerNote");
 const instructorShell = document.querySelector("#instructorShell");
+const adminShell = document.querySelector("#adminShell");
 const currentInstructorName = document.querySelector("#currentInstructorName");
 const currentStudentName = document.querySelector("#currentStudentName");
+const currentAdminName = document.querySelector("#currentAdminName");
 const logoutInstructor = document.querySelector("#logoutInstructor");
 const logoutStudent = document.querySelector("#logoutStudent");
+const logoutAdmin = document.querySelector("#logoutAdmin");
 const backHomeButtons = document.querySelectorAll("[data-back-home]");
 const bookingView = document.querySelector("#bookingView");
 const studentInstructorFilter = document.querySelector("#studentInstructorFilter");
@@ -97,8 +109,10 @@ const selectedSlot = document.querySelector("#selectedSlot");
 const studentProfileSummary = document.querySelector("#studentProfileSummary");
 const studentDetailsFields = document.querySelector("#studentDetailsFields");
 const bookingList = document.querySelector("#bookingList");
+const instructorApprovalList = document.querySelector("#instructorApprovalList");
 const formNote = document.querySelector("#formNote");
 const adminNote = document.querySelector("#adminNote");
+const approvalNote = document.querySelector("#approvalNote");
 const exportCsv = document.querySelector("#exportCsv");
 const clearDemo = document.querySelector("#clearDemo");
 const adminView = document.querySelector("#adminView");
@@ -251,14 +265,14 @@ function saveBookings() {
   return syncBookingsToSupabase();
 }
 
-function saveInstructors() {
+function saveInstructors(instructorsToSync = null) {
   localStorage.setItem(INSTRUCTORS_KEY, JSON.stringify(state.instructors));
-  return syncInstructorsToSupabase();
+  return syncInstructorsToSupabase(instructorsToSync);
 }
 
-function saveStudents() {
+function saveStudents(studentsToSync = null) {
   localStorage.setItem(STUDENTS_KEY, JSON.stringify(state.students));
-  return syncStudentsToSupabase();
+  return syncStudentsToSupabase(studentsToSync);
 }
 
 function mapInstructorFromRow(row) {
@@ -271,6 +285,9 @@ function mapInstructorFromRow(row) {
     email: row.email,
     login: row.login,
     password: row.password,
+    status: row.status,
+    approvedAt: row.approved_at,
+    approvedBy: row.approved_by,
     schedule: row.schedule,
     notifications: row.notifications,
     createdAt: row.created_at,
@@ -287,9 +304,21 @@ function mapInstructorToRow(instructor) {
     email: instructor.email,
     login: instructor.login,
     password: instructor.password,
+    status: instructor.status,
+    approved_at: instructor.approvedAt,
+    approved_by: instructor.approvedBy,
     schedule: instructor.schedule,
     notifications: instructor.notifications,
     created_at: instructor.createdAt,
+  };
+}
+
+function mapBookedSlotFromRow(row) {
+  return {
+    id: row.id,
+    date: row.lesson_date,
+    time: String(row.lesson_time ?? "").slice(0, 5),
+    instructorId: row.instructor_id,
   };
 }
 
@@ -391,10 +420,11 @@ async function loadSupabaseState() {
     const localInstructors = [...state.instructors];
     const localStudents = [...state.students];
     const localBookings = [...state.bookings];
-    const [instructorsResult, studentsResult, bookingsResult] = await Promise.all([
+    const [instructorsResult, studentsResult, bookingsResult, slotsResult] = await Promise.all([
       supabaseClient.from("instructors").select("*").order("created_at", { ascending: true }),
       supabaseClient.from("students").select("*").order("created_at", { ascending: true }),
       supabaseClient.from("bookings").select("*").order("lesson_date", { ascending: true }).order("lesson_time", { ascending: true }),
+      supabaseClient.from("booked_slots").select("*"),
     ]);
 
     if (instructorsResult.error) throw instructorsResult.error;
@@ -412,18 +442,36 @@ async function loadSupabaseState() {
     const remoteBookings = bookingsResult.data
       .map(mapBookingFromRow)
       .filter((booking) => !INTERNAL_TEST_INSTRUCTOR_IDS.has(booking.instructorId));
+    const remoteSlots = slotsResult.error
+      ? remoteBookings.map((booking) => ({
+        id: booking.id,
+        date: booking.date,
+        time: booking.time,
+        instructorId: getBookingInstructorId(booking),
+      }))
+      : slotsResult.data.map(mapBookedSlotFromRow).filter((slot) => (
+        slot.date && slot.time && slot.instructorId && !INTERNAL_TEST_INSTRUCTOR_IDS.has(slot.instructorId)
+      ));
 
-    const shouldSyncLocalInstructors = remoteInstructors.length === 0 && localInstructors.length > 0;
-    const shouldSyncLocalStudents = state.studentsSchemaReady && remoteStudents.length === 0 && localStudents.length > 0;
-    const shouldSyncLocalBookings = remoteBookings.length === 0 && localBookings.length > 0;
+    const shouldSyncLocalInstructors = state.isAdmin && remoteInstructors.length === 0 && localInstructors.length > 0;
+    const shouldSyncLocalStudents = state.isAdmin && state.studentsSchemaReady && remoteStudents.length === 0 && localStudents.length > 0;
+    const shouldSyncLocalBookings = state.isAdmin && remoteBookings.length === 0 && localBookings.length > 0;
 
     state.instructors = shouldSyncLocalInstructors ? localInstructors : remoteInstructors;
     state.students = shouldSyncLocalStudents ? localStudents : remoteStudents;
     state.bookings = shouldSyncLocalBookings ? localBookings : remoteBookings;
+    state.bookedSlots = shouldSyncLocalBookings
+      ? localBookings.map((booking) => ({
+        id: booking.id,
+        date: booking.date,
+        time: booking.time,
+        instructorId: getBookingInstructorId(booking),
+      }))
+      : remoteSlots;
 
     await Promise.all([
-      shouldSyncLocalInstructors ? syncInstructorsToSupabase() : Promise.resolve(true),
-      shouldSyncLocalStudents ? syncStudentsToSupabase() : Promise.resolve(true),
+      shouldSyncLocalInstructors ? syncInstructorsToSupabase(localInstructors) : Promise.resolve(true),
+      shouldSyncLocalStudents ? syncStudentsToSupabase(localStudents) : Promise.resolve(true),
       shouldSyncLocalBookings ? syncBookingsToSupabase() : Promise.resolve(true),
     ]);
 
@@ -445,8 +493,13 @@ async function loadSupabaseState() {
   }
 }
 
-async function syncInstructorsToSupabase() {
-  const instructorsToSync = state.instructors.filter(isVisibleInstructor);
+async function syncInstructorsToSupabase(items = null) {
+  const source = Array.isArray(items)
+    ? items
+    : state.isAdmin
+      ? state.instructors
+      : state.instructors.filter((instructor) => instructor.id === state.currentInstructorId);
+  const instructorsToSync = source.filter(isVisibleInstructor);
 
   if (!isSupabaseEnabled || instructorsToSync.length === 0) {
     showSyncIdleStatus();
@@ -470,8 +523,13 @@ async function syncInstructorsToSupabase() {
   }
 }
 
-async function syncStudentsToSupabase() {
-  const studentsToSync = state.students.filter(Boolean);
+async function syncStudentsToSupabase(items = null) {
+  const source = Array.isArray(items)
+    ? items
+    : state.isAdmin
+      ? state.students
+      : state.students.filter((student) => student.id === state.currentStudentId);
+  const studentsToSync = source.filter(Boolean);
 
   if (!isSupabaseEnabled || studentsToSync.length === 0) {
     showSyncIdleStatus();
@@ -729,6 +787,27 @@ function getInstructorByPhone(phone) {
   return state.instructors.find((instructor) => normalizePhone(instructor.phone) === normalizedPhone) ?? null;
 }
 
+function normalizeInstructorStatus(status) {
+  const normalized = String(status ?? "").trim().toLowerCase();
+  return INSTRUCTOR_STATUSES.has(normalized) ? normalized : "approved";
+}
+
+function isInstructorApproved(instructor) {
+  return normalizeInstructorStatus(instructor?.status) === "approved";
+}
+
+function isInstructorPending(instructor) {
+  return normalizeInstructorStatus(instructor?.status) === "pending";
+}
+
+function isInstructorBlocked(instructor) {
+  return normalizeInstructorStatus(instructor?.status) === "blocked";
+}
+
+function getPublicInstructors() {
+  return state.instructors.filter((instructor) => isVisibleInstructor(instructor) && isInstructorApproved(instructor));
+}
+
 function normalizeStudent(student) {
   if (!student || typeof student !== "object") {
     return null;
@@ -776,6 +855,9 @@ function normalizeInstructor(instructor) {
     email: normalizeEmail(instructor.email),
     login,
     password: String(instructor.password ?? ""),
+    status: normalizeInstructorStatus(instructor.status),
+    approvedAt: instructor.approvedAt ?? instructor.approved_at ?? null,
+    approvedBy: instructor.approvedBy ?? instructor.approved_by ?? null,
     schedule: normalizeSettings(instructor.schedule),
     notifications: normalizeNotifications(instructor.notifications),
     createdAt: instructor.createdAt ?? new Date().toISOString(),
@@ -810,6 +892,18 @@ function setStudentSession(studentId) {
   }
 
   localStorage.removeItem(STUDENT_SESSION_KEY);
+}
+
+function setAdminSession(adminId) {
+  state.currentAdminId = adminId || null;
+  state.isAdmin = Boolean(adminId);
+
+  if (adminId) {
+    localStorage.setItem(ADMIN_SESSION_KEY, adminId);
+    return;
+  }
+
+  localStorage.removeItem(ADMIN_SESSION_KEY);
 }
 
 function getCurrentInstructor() {
@@ -925,11 +1019,13 @@ function getBlockedDate(settings, dateKey) {
 }
 
 function getStudentInstructorCandidates() {
+  const instructors = getPublicInstructors();
+
   if (state.selectedInstructorId === ANY_INSTRUCTOR_ID) {
-    return state.instructors;
+    return instructors;
   }
 
-  return [getInstructorById(state.selectedInstructorId)].filter(Boolean);
+  return [instructors.find((instructor) => instructor.id === state.selectedInstructorId)].filter(Boolean);
 }
 
 function getDays() {
@@ -1003,12 +1099,20 @@ function isSlotInSchedule(instructor, dateKey, time) {
 }
 
 function isSlotBooked(dateKey, time, instructorId, ignoredId = null) {
-  return state.bookings.some((booking) => (
+  const bookingMatches = state.bookings.some((booking) => (
     booking.id !== ignoredId
     && booking.date === dateKey
     && booking.time === time
     && getBookingInstructorId(booking) === instructorId
   ));
+  const slotMatches = state.bookedSlots.some((slot) => (
+    slot.id !== ignoredId
+    && slot.date === dateKey
+    && slot.time === time
+    && slot.instructorId === instructorId
+  ));
+
+  return bookingMatches || slotMatches;
 }
 
 function countInstructorBookings(instructorId, dateKey) {
@@ -1038,8 +1142,8 @@ function getAvailableTimesForInstructor(instructor, dateKey, options = {}) {
 function findAvailableInstructorForSlot(dateKey, time, requestedInstructorId = state.selectedInstructorId, ignoredId = null, options = {}) {
   const { respectAdvance = true } = options;
   const candidates = requestedInstructorId === ANY_INSTRUCTOR_ID
-    ? state.instructors
-    : [getInstructorById(requestedInstructorId)].filter(Boolean);
+    ? getPublicInstructors()
+    : getPublicInstructors().filter((instructor) => instructor.id === requestedInstructorId);
 
   return candidates
     .filter((instructor) => (
@@ -1076,16 +1180,17 @@ function formatSlot(dateKey, time) {
 function renderStudentInstructorFilter() {
   if (!studentInstructorFilter) return;
 
-  const hasInstructors = state.instructors.length > 0;
+  const instructors = getPublicInstructors();
+  const hasInstructors = instructors.length > 0;
 
   if (!hasInstructors) {
     state.selectedInstructorId = ANY_INSTRUCTOR_ID;
     studentInstructorFilter.disabled = true;
-    studentInstructorFilter.innerHTML = `<option value="${ANY_INSTRUCTOR_ID}">Пока нет зарегистрированных инструкторов</option>`;
+    studentInstructorFilter.innerHTML = `<option value="${ANY_INSTRUCTOR_ID}">Пока нет одобренных инструкторов</option>`;
     return;
   }
 
-  const selectedExists = state.selectedInstructorId === ANY_INSTRUCTOR_ID || state.instructors.some((instructor) => instructor.id === state.selectedInstructorId);
+  const selectedExists = state.selectedInstructorId === ANY_INSTRUCTOR_ID || instructors.some((instructor) => instructor.id === state.selectedInstructorId);
   if (!selectedExists) {
     state.selectedInstructorId = ANY_INSTRUCTOR_ID;
   }
@@ -1093,7 +1198,7 @@ function renderStudentInstructorFilter() {
   studentInstructorFilter.disabled = false;
   studentInstructorFilter.innerHTML = [
     `<option value="${ANY_INSTRUCTOR_ID}">Любой свободный инструктор</option>`,
-    ...state.instructors.map((instructor) => (
+    ...instructors.map((instructor) => (
       `<option value="${escapeHtml(instructor.id)}">${escapeHtml(getInstructorName(instructor))}</option>`
     )),
   ].join("");
@@ -1135,8 +1240,8 @@ function renderDays() {
 function renderSlots() {
   if (!slotGrid) return;
 
-  if (state.instructors.length === 0) {
-    slotGrid.innerHTML = `<p class="empty-state">Пока нет зарегистрированных инструкторов. Инструктор должен сначала создать кабинет и настроить расписание.</p>`;
+  if (getPublicInstructors().length === 0) {
+    slotGrid.innerHTML = `<p class="empty-state">Пока нет одобренных инструкторов. Администратор должен подтвердить кабинет инструктора.</p>`;
     return;
   }
 
@@ -1262,6 +1367,62 @@ function renderCurrentStudentProfile() {
       input.disabled = Boolean(student);
     });
   }
+}
+
+function getInstructorStatusLabel(status) {
+  const normalized = normalizeInstructorStatus(status);
+  if (normalized === "approved") return "одобрен";
+  if (normalized === "blocked") return "заблокирован";
+  return "ожидает";
+}
+
+function renderCurrentAdminName() {
+  if (!currentAdminName) return;
+
+  currentAdminName.textContent = state.isAdmin ? "Администратор" : "";
+}
+
+function renderInstructorApprovalList() {
+  if (!instructorApprovalList) return;
+
+  if (!state.isAdmin) {
+    instructorApprovalList.innerHTML = `<p class="empty-state">Войдите как администратор, чтобы модерировать инструкторов.</p>`;
+    return;
+  }
+
+  const instructors = state.instructors
+    .filter(isVisibleInstructor)
+    .sort((a, b) => {
+      const order = { pending: 0, approved: 1, blocked: 2 };
+      return (order[a.status] ?? 3) - (order[b.status] ?? 3)
+        || getInstructorName(a).localeCompare(getInstructorName(b), "ru");
+    });
+
+  if (instructors.length === 0) {
+    instructorApprovalList.innerHTML = `<p class="empty-state">Заявок инструкторов пока нет.</p>`;
+    return;
+  }
+
+  instructorApprovalList.innerHTML = instructors.map((instructor) => {
+    const status = normalizeInstructorStatus(instructor.status);
+    const canApprove = status !== "approved";
+    const canBlock = status !== "blocked";
+
+    return `
+      <article class="moderation-card ${status}">
+        <div>
+          <span class="status-pill">${escapeHtml(getInstructorStatusLabel(status))}</span>
+          <h3>${escapeHtml(getInstructorName(instructor))}</h3>
+          <p>${escapeHtml(instructor.phone || "Телефон не указан")} · ${escapeHtml(instructor.email || "Email не указан")}</p>
+          <small>Логин: ${escapeHtml(instructor.login)}</small>
+        </div>
+        <div class="card-actions">
+          ${canApprove ? `<button class="primary-action" type="button" data-approve-instructor="${escapeHtml(instructor.id)}">Одобрить</button>` : ""}
+          ${canBlock ? `<button class="danger-action" type="button" data-block-instructor="${escapeHtml(instructor.id)}">Заблокировать</button>` : ""}
+        </div>
+      </article>
+    `;
+  }).join("");
 }
 
 function renderSettingsForm() {
@@ -1488,12 +1649,17 @@ function renderAnalytics() {
 function renderEditInstructorOptions(selectedInstructorId) {
   if (!bookingEditForm?.editInstructor) return;
 
-  if (state.instructors.length === 0) {
+  const currentInstructor = getCurrentInstructor();
+  const instructors = state.isAdmin
+    ? getPublicInstructors()
+    : [currentInstructor].filter(Boolean);
+
+  if (instructors.length === 0) {
     bookingEditForm.editInstructor.innerHTML = `<option value="">Нет зарегистрированных инструкторов</option>`;
     return;
   }
 
-  bookingEditForm.editInstructor.innerHTML = state.instructors
+  bookingEditForm.editInstructor.innerHTML = instructors
     .map((instructor) => (
       `<option value="${escapeHtml(instructor.id)}">${escapeHtml(getInstructorName(instructor))}</option>`
     ))
@@ -1534,6 +1700,8 @@ function render() {
   renderBookings();
   renderCurrentInstructorName();
   renderCurrentStudentProfile();
+  renderCurrentAdminName();
+  renderInstructorApprovalList();
   renderSettingsForm();
   renderNotifications();
   renderCalendar();
@@ -1610,8 +1778,14 @@ function showAppScreen(screen) {
   if (instructorLoginView) {
     instructorLoginView.hidden = screen !== "login";
   }
+  if (adminLoginView) {
+    adminLoginView.hidden = screen !== "admin-login";
+  }
   if (instructorShell) {
     instructorShell.hidden = screen !== "instructor";
+  }
+  if (adminShell) {
+    adminShell.hidden = screen !== "admin";
   }
 
   if (screen !== "instructor") {
@@ -1716,6 +1890,19 @@ function showInstructorLogin() {
   showLoginMode();
 }
 
+function showAdminLogin() {
+  window.history.replaceState(null, "", "index.html#admin");
+  showAppScreen("admin-login");
+  showAdminLoginNote("");
+  adminLoginForm?.adminEmail.focus();
+}
+
+function showAdminDashboard() {
+  window.history.replaceState(null, "", "index.html#admin");
+  showAppScreen("admin");
+  render();
+}
+
 function setInstructorView(view) {
   const views = {
     admin: adminView,
@@ -1751,6 +1938,16 @@ function openInstructorFlow() {
   showInstructorLogin();
 }
 
+function openAdminFlow() {
+  if (state.isAdmin && state.currentAdminId) {
+    showAdminDashboard();
+    return;
+  }
+
+  setAdminSession(null);
+  showAdminLogin();
+}
+
 function showNote(message, isError = false) {
   if (!formNote) return;
   formNote.textContent = message;
@@ -1781,10 +1978,22 @@ function showLoginNote(message, isError = false) {
   loginNote.classList.toggle("error", isError);
 }
 
+function showAdminLoginNote(message, isError = false) {
+  if (!adminLoginNote) return;
+  adminLoginNote.textContent = message;
+  adminLoginNote.classList.toggle("error", isError);
+}
+
 function showRegisterNote(message, isError = false) {
   if (!registerNote) return;
   registerNote.textContent = message;
   registerNote.classList.toggle("error", isError);
+}
+
+function showApprovalNote(message, isError = false) {
+  if (!approvalNote) return;
+  approvalNote.textContent = message;
+  approvalNote.classList.toggle("error", isError);
 }
 
 function showStudentLoginNote(message, isError = false) {
@@ -1841,6 +2050,35 @@ function getAuthErrorMessage(error) {
   return "Не удалось выполнить действие. Проверьте данные и попробуйте еще раз.";
 }
 
+async function loadAdminStateForCurrentUser() {
+  if (!isSupabaseEnabled) {
+    setAdminSession(null);
+    return false;
+  }
+
+  const { data: userData, error: userError } = await supabaseClient.auth.getUser();
+  const user = userData?.user;
+
+  if (userError || !user) {
+    setAdminSession(null);
+    return false;
+  }
+
+  const { data, error } = await supabaseClient
+    .from("admins")
+    .select("id,email")
+    .eq("id", user.id)
+    .maybeSingle();
+
+  if (error || !data) {
+    setAdminSession(null);
+    return false;
+  }
+
+  setAdminSession(data.id);
+  return true;
+}
+
 function getAuthProfileFromUser(user) {
   const metadata = user?.user_metadata ?? {};
 
@@ -1866,6 +2104,7 @@ function getAuthProfileFromUser(user) {
     email,
     login,
     password: "",
+    status: "pending",
     schedule: loadLegacySettings(),
     notifications: { ...DEFAULT_NOTIFICATIONS },
     createdAt: new Date().toISOString(),
@@ -1903,10 +2142,31 @@ function canUseLegacyPassword(instructor, password) {
 }
 
 function completeInstructorLogin(instructor) {
+  if (isInstructorPending(instructor)) {
+    setInstructorSession(null);
+    if (isSupabaseEnabled) {
+      supabaseClient.auth.signOut();
+    }
+    showSyncIdleStatus();
+    showLoginNote("Заявка инструктора отправлена администратору. После одобрения вы сможете войти в кабинет.", true);
+    return false;
+  }
+
+  if (isInstructorBlocked(instructor)) {
+    setInstructorSession(null);
+    if (isSupabaseEnabled) {
+      supabaseClient.auth.signOut();
+    }
+    showSyncIdleStatus();
+    showLoginNote("Кабинет инструктора заблокирован. Обратитесь к администратору.", true);
+    return false;
+  }
+
   setInstructorSession(instructor.id);
   loginForm.reset();
   showLoginNote("");
   showInstructorDashboard();
+  return true;
 }
 
 function handleSubmit(event) {
@@ -2240,13 +2500,19 @@ async function handleStudentLogin(event) {
     return;
   }
 
+  await loadSupabaseState();
+
   let student = getStudentById(data.user.id) || getStudentByEmail(email);
 
   if (!student) {
     student = getStudentProfileFromUser(data.user);
     if (student) {
       state.students.push(student);
-      await saveStudents();
+      const isSaved = await saveStudents([student]);
+      if (!isSaved) {
+        showStudentLoginNote("Вход выполнен, но профиль ученика не сохранился. Попробуйте еще раз.", true);
+        return;
+      }
     }
   }
 
@@ -2347,23 +2613,24 @@ async function handleStudentRegister(event) {
     createdAt: new Date().toISOString(),
   });
 
+  if (!data.session) {
+    studentRegisterForm.reset();
+    showSyncIdleStatus();
+    showStudentRegisterNote("Кабинет создан. Подтвердите email, затем войдите - профиль сохранится автоматически.", false);
+    return;
+  }
+
   state.students.push(student);
-  const isSaved = await saveStudents();
+  setStudentSession(student.id);
+  const isSaved = await saveStudents([student]);
 
   if (!isSaved) {
+    setStudentSession(null);
     showStudentRegisterNote("Кабинет создан, но профиль не сохранился в таблицу. Попробуйте обновить страницу.", true);
     return;
   }
 
   studentRegisterForm.reset();
-
-  if (!data.session) {
-    showSyncIdleStatus();
-    showStudentRegisterNote("Кабинет создан. Проверьте email и подтвердите регистрацию, затем войдите.", false);
-    return;
-  }
-
-  setStudentSession(student.id);
   finishSyncSuccess("Кабинет ученика создан");
   showStudentRegisterNote("");
   showStudentBooking();
@@ -2413,13 +2680,19 @@ async function handleLogin(event) {
       return;
     }
 
+    await loadSupabaseState();
+
     let authInstructor = getInstructorById(data.user.id) || getInstructorByEmail(authEmail) || instructor;
 
     if (!authInstructor) {
       authInstructor = getAuthProfileFromUser(data.user);
       if (authInstructor) {
         state.instructors.push(authInstructor);
-        await saveInstructors();
+        const isSaved = await saveInstructors([authInstructor]);
+        if (!isSaved) {
+          showLoginNote("Вход выполнен, но заявка инструктора не сохранилась. Попробуйте еще раз.", true);
+          return;
+        }
       }
     }
 
@@ -2429,8 +2702,9 @@ async function handleLogin(event) {
       return;
     }
 
-    completeInstructorLogin(authInstructor);
-    finishSyncSuccess("Вход выполнен");
+    if (completeInstructorLogin(authInstructor)) {
+      finishSyncSuccess("Вход выполнен");
+    }
     return;
   }
 
@@ -2527,13 +2801,25 @@ async function handleRegister(event) {
     email,
     login,
     password: "",
+    status: "pending",
+    approvedAt: null,
+    approvedBy: null,
     schedule: loadLegacySettings(),
     notifications: { ...DEFAULT_NOTIFICATIONS },
     createdAt: new Date().toISOString(),
   };
 
+  if (!data.session) {
+    registerForm.reset();
+    showSyncIdleStatus();
+    showRegisterNote("Кабинет создан. Подтвердите email, затем войдите - заявка уйдет администратору на одобрение.", false);
+    return;
+  }
+
   state.instructors.push(instructor);
-  const isSaved = await saveInstructors();
+  setInstructorSession(instructor.id);
+  const isSaved = await saveInstructors([instructor]);
+  setInstructorSession(null);
 
   if (!isSaved) {
     showRegisterNote("Кабинет создан, но профиль не сохранился в таблицу. Попробуйте обновить страницу.", true);
@@ -2541,21 +2827,104 @@ async function handleRegister(event) {
   }
 
   registerForm.reset();
+  finishSyncSuccess("Заявка отправлена");
+  showRegisterNote("Заявка инструктора отправлена администратору. После одобрения вы сможете войти.", false);
+}
 
-  if (!data.session) {
-    showSyncIdleStatus();
-    showRegisterNote("Кабинет создан. Проверьте email и подтвердите регистрацию, затем войдите.", false);
+async function handleAdminLogin(event) {
+  event.preventDefault();
+
+  if (!isSupabaseEnabled) {
+    showAdminLoginNote("Для админ-панели нужен подключенный Supabase.", true);
     return;
   }
 
-  setInstructorSession(instructor.id);
-  finishSyncSuccess("Кабинет создан");
-  showRegisterNote("");
-  showInstructorDashboard();
+  const formData = new FormData(adminLoginForm);
+  const email = normalizeEmail(formData.get("adminEmail"));
+  const password = formData.get("adminPassword").trim();
+
+  if (!isValidEmail(email)) {
+    showAdminLoginNote(getEmailErrorMessage(), true);
+    return;
+  }
+
+  startSyncStatus("Проверяем администратора");
+
+  const { error } = await supabaseClient.auth.signInWithPassword({
+    email,
+    password,
+  });
+
+  if (error) {
+    showSyncIdleStatus();
+    showAdminLoginNote(getAuthErrorMessage(error), true);
+    return;
+  }
+
+  const isAdmin = await loadAdminStateForCurrentUser();
+  if (!isAdmin) {
+    await supabaseClient.auth.signOut();
+    showSyncIdleStatus();
+    showAdminLoginNote("Этот аккаунт не добавлен в список администраторов.", true);
+    return;
+  }
+
+  await loadSupabaseState();
+  adminLoginForm.reset();
+  finishSyncSuccess("Администратор вошел");
+  showAdminDashboard();
+}
+
+async function updateInstructorStatus(instructorId, status) {
+  if (!state.isAdmin) {
+    showApprovalNote("Нужно войти как администратор.", true);
+    return;
+  }
+
+  const instructor = getInstructorById(instructorId);
+  if (!instructor) {
+    showApprovalNote("Инструктор не найден.", true);
+    return;
+  }
+
+  const nextStatus = normalizeInstructorStatus(status);
+  const updates = {
+    status: nextStatus,
+    approved_at: nextStatus === "approved" ? new Date().toISOString() : null,
+    approved_by: nextStatus === "approved" ? state.currentAdminId : null,
+  };
+
+  startSyncStatus(nextStatus === "approved" ? "Одобряем инструктора" : "Блокируем инструктора");
+
+  const { error } = await supabaseClient
+    .from("instructors")
+    .update(updates)
+    .eq("id", instructor.id);
+
+  if (error) {
+    finishSyncError(error, "Не удалось обновить инструктора");
+    showApprovalNote(describeSyncError(error), true);
+    return;
+  }
+
+  Object.assign(instructor, {
+    status: nextStatus,
+    approvedAt: updates.approved_at,
+    approvedBy: updates.approved_by,
+  });
+
+  localStorage.setItem(INSTRUCTORS_KEY, JSON.stringify(state.instructors));
+  finishSyncSuccess(nextStatus === "approved" ? "Инструктор одобрен" : "Инструктор заблокирован");
+  showApprovalNote(nextStatus === "approved"
+    ? `${getInstructorName(instructor)} теперь доступен ученикам.`
+    : `${getInstructorName(instructor)} скрыт от учеников.`
+  );
+  render();
 }
 
 studentEntry?.addEventListener("click", openStudentFlow);
 instructorEntry?.addEventListener("click", openInstructorFlow);
+adminEntry?.addEventListener("click", openAdminFlow);
 backHomeButtons.forEach((button) => button.addEventListener("click", showRoleChoice));
 showStudentRegister?.addEventListener("click", showStudentRegisterMode);
 showStudentLogin?.addEventListener("click", showStudentLoginMode);
@@ -2564,9 +2933,13 @@ showLogin?.addEventListener("click", showLoginMode);
 studentLoginForm?.addEventListener("submit", handleStudentLogin);
 studentRegisterForm?.addEventListener("submit", handleStudentRegister);
 loginForm?.addEventListener("submit", handleLogin);
+adminLoginForm?.addEventListener("submit", handleAdminLogin);
 registerForm?.addEventListener("submit", handleRegister);
 logoutInstructor?.addEventListener("click", () => {
   setInstructorSession(null);
+  if (isSupabaseEnabled) {
+    supabaseClient.auth.signOut();
+  }
   showRoleChoice();
 });
 logoutStudent?.addEventListener("click", () => {
@@ -2575,6 +2948,13 @@ logoutStudent?.addEventListener("click", () => {
     supabaseClient.auth.signOut();
   }
   showStudentLoginScreen();
+});
+logoutAdmin?.addEventListener("click", () => {
+  setAdminSession(null);
+  if (isSupabaseEnabled) {
+    supabaseClient.auth.signOut();
+  }
+  showRoleChoice();
 });
 
 studentInstructorFilter?.addEventListener("change", () => {
@@ -2623,6 +3003,20 @@ bookingList?.addEventListener("click", (event) => {
 
   if (deleteButton) {
     deleteBooking(deleteButton.dataset.delete);
+  }
+});
+
+instructorApprovalList?.addEventListener("click", (event) => {
+  const approveButton = event.target.closest("[data-approve-instructor]");
+  const blockButton = event.target.closest("[data-block-instructor]");
+
+  if (approveButton) {
+    updateInstructorStatus(approveButton.dataset.approveInstructor, "approved");
+    return;
+  }
+
+  if (blockButton) {
+    updateInstructorStatus(blockButton.dataset.blockInstructor, "blocked");
   }
 });
 
@@ -2770,6 +3164,7 @@ viewButtons.forEach((button) => {
 });
 
 async function initApp() {
+  await loadAdminStateForCurrentUser();
   await loadSupabaseState();
   render();
 
@@ -2777,6 +3172,8 @@ async function initApp() {
     openStudentFlow();
   } else if (window.location.hash === "#instructor") {
     openInstructorFlow();
+  } else if (window.location.hash === "#admin") {
+    openAdminFlow();
   } else {
     showAppScreen("role");
   }

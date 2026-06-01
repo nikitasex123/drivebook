@@ -34,6 +34,11 @@
             <strong>Войти в кабинет</strong>
             <small>Журнал заявок, редактирование записей и настройки расписания.</small>
           </button>
+          <button class="role-card" id="adminEntry" type="button">
+            <span>Админ</span>
+            <strong>Модерация</strong>
+            <small>Одобрение инструкторов и защита сервиса от фейковых кабинетов.</small>
+          </button>
         </div>
       </section>
 
@@ -249,9 +254,67 @@
             <button class="primary-action" type="submit">Зарегистрироваться</button>
             <button id="showLogin" type="button">Уже есть кабинет</button>
           </div>
-          <p class="form-note muted-note">Кабинет сохраняется на сервере, а локальная копия остается в браузере для быстрого входа.</p>
+          <p class="form-note muted-note">После регистрации администратор должен одобрить кабинет, и только потом инструктор появится у учеников.</p>
           <p class="form-note" id="registerNote" role="status"></p>
         </form>
+      </section>
+
+      <section class="login-panel" id="adminLoginView" aria-labelledby="admin-login-title" hidden>
+        <div class="top-bar inline-bar">
+          <div>
+            <p class="eyebrow">Админ</p>
+            <strong>Защита сервиса</strong>
+          </div>
+          <button class="secondary-action" type="button" data-back-home>Назад</button>
+        </div>
+
+        <form class="login-form" id="adminLoginForm">
+          <div>
+            <p class="eyebrow">Вход</p>
+            <h1 id="admin-login-title">Войти как администратор</h1>
+          </div>
+
+          <label>
+            Email
+            <input id="adminEmail" name="adminEmail" autocomplete="email" inputmode="email" type="email" required placeholder="admin@example.com" />
+          </label>
+
+          <label>
+            Пароль
+            <input id="adminPassword" name="adminPassword" autocomplete="current-password" type="password" required placeholder="Пароль" />
+          </label>
+
+          <div class="settings-actions">
+            <button class="primary-action" type="submit">Войти</button>
+          </div>
+          <p class="form-note muted-note">Доступ есть только у аккаунтов, добавленных в таблицу администраторов.</p>
+          <p class="form-note" id="adminLoginNote" role="status"></p>
+        </form>
+      </section>
+
+      <section class="instructor-shell" id="adminShell" hidden>
+        <header class="top-bar">
+          <div>
+            <p class="eyebrow">DriveBook</p>
+            <strong>Админ-панель</strong>
+            <span class="current-instructor" id="currentAdminName"></span>
+          </div>
+          <div class="header-actions">
+            <button class="secondary-action" type="button" data-back-home>Назад</button>
+            <button class="secondary-action" id="logoutAdmin" type="button">Выйти</button>
+          </div>
+        </header>
+
+        <section class="admin-panel" aria-labelledby="approval-title">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">Модерация</p>
+              <h2 id="approval-title">Инструкторы</h2>
+            </div>
+          </div>
+          <p class="form-note" id="approvalNote" role="status"></p>
+          <div class="approval-list" id="instructorApprovalList"></div>
+        </section>
       </section>
 
       <section class="instructor-shell" id="instructorShell" hidden>

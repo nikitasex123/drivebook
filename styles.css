@@ -208,7 +208,7 @@ button {
 
 .role-actions {
   display: grid;
-  grid-template-columns: repeat(2, minmax(240px, 1fr));
+  grid-template-columns: repeat(3, minmax(220px, 1fr));
   gap: 14px;
   padding: 28px;
   background: var(--surface);
@@ -705,6 +705,44 @@ textarea:focus {
   gap: 10px;
 }
 
+.approval-list {
+  display: grid;
+  gap: 10px;
+}
+
+.moderation-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 16px;
+  border: 1px solid var(--line);
+  border-left: 5px solid var(--warning);
+  border-radius: 8px;
+  padding: 16px;
+  background: #fff;
+}
+
+.moderation-card.approved {
+  border-left-color: var(--accent);
+}
+
+.moderation-card.blocked {
+  border-left-color: var(--danger);
+}
+
+.moderation-card h3 {
+  margin: 8px 0 6px;
+  font-size: 1.1rem;
+}
+
+.moderation-card p,
+.moderation-card small {
+  display: block;
+  margin: 0;
+  color: var(--muted);
+  font-weight: 700;
+}
+
 .mini-panel {
   margin-bottom: 18px;
   border: 1px solid var(--line);
@@ -842,6 +880,12 @@ textarea:focus {
 
 .booking-card .danger-action {
   border-color: #f0caca;
+  background: #fff5f5;
+  color: var(--danger);
+}
+
+.danger-action {
+  border: 1px solid #f0caca;
   background: #fff5f5;
   color: var(--danger);
 }
@@ -1159,7 +1203,12 @@ textarea:focus {
 
 @media (max-width: 940px) {
   .content-grid,
-  .booking-card {
+  .booking-card,
+  .moderation-card {
+    grid-template-columns: 1fr;
+  }
+
+  .role-actions {
     grid-template-columns: 1fr;
   }
 

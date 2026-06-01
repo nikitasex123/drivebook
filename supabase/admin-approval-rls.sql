@@ -4,26 +4,6 @@ create table if not exists public.admins (
   created_at timestamptz not null default now()
 );
 
-create table if not exists public.instructors (
-  id text primary key,
-  first_name text not null,
-  last_name text not null,
-  patronymic text default '',
-  phone text default '',
-  email text default '',
-  login text not null unique,
-  password text not null,
-  status text not null default 'pending',
-  approved_at timestamptz,
-  approved_by uuid references auth.users(id) on delete set null,
-  schedule jsonb not null default '{}'::jsonb,
-  notifications jsonb not null default '{}'::jsonb,
-  telegram_chat_id text,
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now(),
-  constraint instructors_status_check check (status in ('pending', 'approved', 'blocked'))
-);
-
 create table if not exists public.students (
   id text primary key,
   first_name text not null,
@@ -35,27 +15,45 @@ create table if not exists public.students (
   updated_at timestamptz not null default now()
 );
 
-create table if not exists public.bookings (
-  id text primary key,
-  lesson_date date not null,
-  lesson_time time not null,
-  student_name text not null,
-  phone text not null,
-  email text default '',
-  student_id text references public.students(id) on delete set null,
-  instructor_id text not null references public.instructors(id) on delete cascade,
-  instructor_name text not null,
-  comment text default '',
-  mailing boolean not null default false,
-  created_at timestamptz not null default now(),
-  updated_at timestamptz
-);
+alter table public.instructors
+  add column if not exists status text not null default 'pending',
+  add column if not exists approved_at timestamptz,
+  add column if not exists approved_by uuid references auth.users(id) on delete set null;
 
-create index if not exists bookings_instructor_date_idx
-  on public.bookings (instructor_id, lesson_date, lesson_time);
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_constraint
+    where conname = 'instructors_status_check'
+      and conrelid = 'public.instructors'::regclass
+  ) then
+    alter table public.instructors
+      add constraint instructors_status_check
+      check (status in ('pending', 'approved', 'blocked'));
+  end if;
+end;
+$$;
 
-create index if not exists bookings_date_time_idx
-  on public.bookings (lesson_date, lesson_time);
+alter table public.bookings
+  add column if not exists student_id text;
+
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_constraint
+    where conname = 'bookings_student_id_fkey'
+      and conrelid = 'public.bookings'::regclass
+  ) then
+    alter table public.bookings
+      add constraint bookings_student_id_fkey
+      foreign key (student_id)
+      references public.students(id)
+      on delete set null;
+  end if;
+end;
+$$;
 
 create index if not exists bookings_student_idx
   on public.bookings (student_id, lesson_date, lesson_time);
@@ -111,6 +109,31 @@ alter table public.admins enable row level security;
 alter table public.instructors enable row level security;
 alter table public.students enable row level security;
 alter table public.bookings enable row level security;
+
+drop policy if exists "MVP public read instructors" on public.instructors;
+drop policy if exists "MVP public create instructors" on public.instructors;
+drop policy if exists "MVP public update instructors" on public.instructors;
+drop policy if exists "MVP public read students" on public.students;
+drop policy if exists "MVP public create students" on public.students;
+drop policy if exists "MVP public update students" on public.students;
+drop policy if exists "MVP public read bookings" on public.bookings;
+drop policy if exists "MVP public create bookings" on public.bookings;
+drop policy if exists "MVP public update bookings" on public.bookings;
+drop policy if exists "MVP public delete bookings" on public.bookings;
+
+drop policy if exists "Admins can read own admin row" on public.admins;
+drop policy if exists "Admins can read instructors" on public.instructors;
+drop policy if exists "Users can read approved or own instructor" on public.instructors;
+drop policy if exists "Users can request instructor approval" on public.instructors;
+drop policy if exists "Approved instructors can update own profile" on public.instructors;
+drop policy if exists "Admins can update instructors" on public.instructors;
+drop policy if exists "Users can read own student profile" on public.students;
+drop policy if exists "Users can create own student profile" on public.students;
+drop policy if exists "Users can update own student profile" on public.students;
+drop policy if exists "Users can read related bookings" on public.bookings;
+drop policy if exists "Students can create own bookings" on public.bookings;
+drop policy if exists "Instructors can update own bookings" on public.bookings;
+drop policy if exists "Instructors can delete own bookings" on public.bookings;
 
 create policy "Admins can read own admin row"
   on public.admins for select
@@ -226,3 +249,12 @@ for each row execute function public.touch_updated_at();
 grant select on public.booked_slots to anon, authenticated;
 grant execute on function public.is_drivebook_admin() to anon, authenticated;
 grant execute on function public.is_approved_instructor(text) to anon, authenticated;
+
+-- Replace this email with your admin account email, then run the whole file.
+-- The account must already exist in Supabase Auth.
+insert into public.admins (id, email)
+select id, email
+from auth.users
+where email = 'YOUR_ADMIN_EMAIL_HERE'
+on conflict (id) do update
+set email = excluded.email;
