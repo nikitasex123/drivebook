@@ -1,7 +1,21 @@
+create extension if not exists pgcrypto;
+
 create table if not exists public.admins (
   id uuid primary key references auth.users(id) on delete cascade,
   email text unique,
   created_at timestamptz not null default now()
+);
+
+create table if not exists public.schools (
+  id uuid primary key default gen_random_uuid(),
+  name text not null,
+  slug text not null unique,
+  invite_key text not null unique,
+  is_active boolean not null default true,
+  created_by uuid references auth.users(id) on delete set null default auth.uid(),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint schools_invite_key_check check (length(trim(invite_key)) >= 8)
 );
 
 create table if not exists public.instructors (
@@ -14,6 +28,7 @@ create table if not exists public.instructors (
   login text not null unique,
   password text not null,
   status text not null default 'pending',
+  school_id uuid references public.schools(id) on delete set null,
   approved_at timestamptz,
   approved_by uuid references auth.users(id) on delete set null,
   schedule jsonb not null default '{}'::jsonb,
@@ -60,6 +75,9 @@ create index if not exists bookings_date_time_idx
 create index if not exists bookings_student_idx
   on public.bookings (student_id, lesson_date, lesson_time);
 
+create index if not exists instructors_school_idx
+  on public.instructors (school_id, status);
+
 create or replace view public.booked_slots as
 select
   id,
@@ -92,6 +110,46 @@ as $$
   );
 $$;
 
+create or replace function public.is_active_school(input_school_id uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select exists (
+    select 1
+    from public.schools
+    where id = input_school_id
+      and is_active = true
+  );
+$$;
+
+create or replace function public.get_school_by_invite_key(input_key text)
+returns table (
+  id uuid,
+  name text,
+  slug text,
+  invite_key text,
+  is_active boolean
+)
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select
+    schools.id,
+    schools.name,
+    schools.slug,
+    schools.invite_key,
+    schools.is_active
+  from public.schools
+  where schools.invite_key = upper(regexp_replace(trim(input_key), '[[:space:]]+', '', 'g'))
+    and schools.is_active = true
+  limit 1;
+$$;
+
 create or replace function public.is_approved_instructor(instructor_id text)
 returns boolean
 language sql
@@ -108,6 +166,7 @@ as $$
 $$;
 
 alter table public.admins enable row level security;
+alter table public.schools enable row level security;
 alter table public.instructors enable row level security;
 alter table public.students enable row level security;
 alter table public.bookings enable row level security;
@@ -115,6 +174,19 @@ alter table public.bookings enable row level security;
 create policy "Admins can read own admin row"
   on public.admins for select
   using (id = auth.uid());
+
+create policy "Admins can read schools"
+  on public.schools for select
+  using (public.is_drivebook_admin());
+
+create policy "Admins can create schools"
+  on public.schools for insert
+  with check (public.is_drivebook_admin());
+
+create policy "Admins can update schools"
+  on public.schools for update
+  using (public.is_drivebook_admin())
+  with check (public.is_drivebook_admin());
 
 create policy "Users can read approved or own instructor"
   on public.instructors for select
@@ -130,6 +202,8 @@ create policy "Users can request instructor approval"
     auth.uid() is not null
     and id = auth.uid()::text
     and status = 'pending'
+    and school_id is not null
+    and public.is_active_school(school_id)
   );
 
 create policy "Approved instructors can update own profile"
@@ -213,6 +287,11 @@ create trigger instructors_touch_updated_at
 before update on public.instructors
 for each row execute function public.touch_updated_at();
 
+drop trigger if exists schools_touch_updated_at on public.schools;
+create trigger schools_touch_updated_at
+before update on public.schools
+for each row execute function public.touch_updated_at();
+
 drop trigger if exists students_touch_updated_at on public.students;
 create trigger students_touch_updated_at
 before update on public.students
@@ -223,6 +302,9 @@ create trigger bookings_touch_updated_at
 before update on public.bookings
 for each row execute function public.touch_updated_at();
 
+grant select, insert, update on public.schools to authenticated;
 grant select on public.booked_slots to anon, authenticated;
 grant execute on function public.is_drivebook_admin() to anon, authenticated;
+grant execute on function public.is_active_school(uuid) to anon, authenticated;
+grant execute on function public.get_school_by_invite_key(text) to anon, authenticated;
 grant execute on function public.is_approved_instructor(text) to anon, authenticated;

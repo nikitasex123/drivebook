@@ -238,6 +238,11 @@
             </label>
           </div>
 
+          <label>
+            Ключ автошколы
+            <input id="schoolInviteKey" name="schoolInviteKey" autocomplete="off" required placeholder="DRIVE-ABCD-1234" />
+          </label>
+
           <div class="settings-grid two-column">
             <label>
               Логин
@@ -254,7 +259,7 @@
             <button class="primary-action" type="submit">Зарегистрироваться</button>
             <button id="showLogin" type="button">Уже есть кабинет</button>
           </div>
-          <p class="form-note muted-note">После регистрации администратор должен одобрить кабинет, и только потом инструктор появится у учеников.</p>
+          <p class="form-note muted-note">Ключ выдает администратор автошколы. После регистрации администратор должен одобрить кабинет.</p>
           <p class="form-note" id="registerNote" role="status"></p>
         </form>
       </section>
@@ -304,6 +309,26 @@
             <button class="secondary-action" id="logoutAdmin" type="button">Выйти</button>
           </div>
         </header>
+
+        <section class="admin-panel" aria-labelledby="schools-title">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">Доступ</p>
+              <h2 id="schools-title">Автошколы</h2>
+            </div>
+          </div>
+
+          <form class="school-form" id="schoolForm">
+            <label>
+              Название автошколы
+              <input id="schoolName" name="schoolName" required placeholder="Например, Автошкола А" />
+            </label>
+            <button class="primary-action" type="submit">Создать автошколу</button>
+          </form>
+
+          <p class="form-note" id="schoolNote" role="status"></p>
+          <div class="school-list" id="schoolList"></div>
+        </section>
 
         <section class="admin-panel" aria-labelledby="approval-title">
           <div class="section-heading">

@@ -2,6 +2,7 @@ const STORAGE_KEY = "drivingLessonBookings";
 const SETTINGS_KEY = "drivingLessonSettings";
 const INSTRUCTORS_KEY = "drivingLessonInstructors";
 const STUDENTS_KEY = "driveBookStudents";
+const SCHOOLS_KEY = "driveBookSchools";
 const INSTRUCTOR_SESSION_KEY = "driveBookInstructorSession";
 const STUDENT_SESSION_KEY = "driveBookStudentSession";
 const ADMIN_SESSION_KEY = "driveBookAdminSession";
@@ -57,11 +58,13 @@ const state = {
   bookedSlots: [],
   instructors: loadInstructors(),
   students: loadStudents(),
+  schools: loadSchools(),
   currentInstructorId: localStorage.getItem(INSTRUCTOR_SESSION_KEY),
   currentStudentId: localStorage.getItem(STUDENT_SESSION_KEY),
   currentAdminId: localStorage.getItem(ADMIN_SESSION_KEY),
   isAdmin: false,
   studentsSchemaReady: false,
+  schoolsSchemaReady: false,
 };
 
 const syncStatus = document.querySelector("#syncStatus");
@@ -109,9 +112,12 @@ const selectedSlot = document.querySelector("#selectedSlot");
 const studentProfileSummary = document.querySelector("#studentProfileSummary");
 const studentDetailsFields = document.querySelector("#studentDetailsFields");
 const bookingList = document.querySelector("#bookingList");
+const schoolForm = document.querySelector("#schoolForm");
+const schoolList = document.querySelector("#schoolList");
 const instructorApprovalList = document.querySelector("#instructorApprovalList");
 const formNote = document.querySelector("#formNote");
 const adminNote = document.querySelector("#adminNote");
+const schoolNote = document.querySelector("#schoolNote");
 const approvalNote = document.querySelector("#approvalNote");
 const exportCsv = document.querySelector("#exportCsv");
 const clearDemo = document.querySelector("#clearDemo");
@@ -256,6 +262,15 @@ function loadStudents() {
   }
 }
 
+function loadSchools() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(SCHOOLS_KEY)) ?? [];
+    return saved.map(normalizeSchool).filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
 function isVisibleInstructor(instructor) {
   return Boolean(instructor) && !INTERNAL_TEST_INSTRUCTOR_IDS.has(instructor.id);
 }
@@ -275,6 +290,37 @@ function saveStudents(studentsToSync = null) {
   return syncStudentsToSupabase(studentsToSync);
 }
 
+function saveSchools(schoolsToSync = null) {
+  localStorage.setItem(SCHOOLS_KEY, JSON.stringify(state.schools));
+  return syncSchoolsToSupabase(schoolsToSync);
+}
+
+function mapSchoolFromRow(row) {
+  return normalizeSchool({
+    id: row.id,
+    name: row.name,
+    slug: row.slug,
+    inviteKey: row.invite_key,
+    isActive: row.is_active,
+    createdBy: row.created_by,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  });
+}
+
+function mapSchoolToRow(school) {
+  return {
+    id: school.id,
+    name: school.name,
+    slug: school.slug,
+    invite_key: school.inviteKey,
+    is_active: school.isActive,
+    created_by: school.createdBy,
+    created_at: school.createdAt,
+    updated_at: school.updatedAt,
+  };
+}
+
 function mapInstructorFromRow(row) {
   return normalizeInstructor({
     id: row.id,
@@ -286,6 +332,7 @@ function mapInstructorFromRow(row) {
     login: row.login,
     password: row.password,
     status: row.status,
+    schoolId: row.school_id,
     approvedAt: row.approved_at,
     approvedBy: row.approved_by,
     schedule: row.schedule,
@@ -295,7 +342,7 @@ function mapInstructorFromRow(row) {
 }
 
 function mapInstructorToRow(instructor) {
-  return {
+  const row = {
     id: instructor.id,
     first_name: instructor.firstName,
     last_name: instructor.lastName,
@@ -311,6 +358,12 @@ function mapInstructorToRow(instructor) {
     notifications: instructor.notifications,
     created_at: instructor.createdAt,
   };
+
+  if (state.schoolsSchemaReady) {
+    row.school_id = instructor.schoolId || null;
+  }
+
+  return row;
 }
 
 function mapBookedSlotFromRow(row) {
@@ -419,8 +472,13 @@ async function loadSupabaseState() {
   try {
     const localInstructors = [...state.instructors];
     const localStudents = [...state.students];
+    const localSchools = [...state.schools];
     const localBookings = [...state.bookings];
-    const [instructorsResult, studentsResult, bookingsResult, slotsResult] = await Promise.all([
+    const schoolsRequest = state.isAdmin
+      ? supabaseClient.from("schools").select("*").order("created_at", { ascending: true })
+      : Promise.resolve({ data: [], error: null });
+    const [schoolsResult, instructorsResult, studentsResult, bookingsResult, slotsResult] = await Promise.all([
+      schoolsRequest,
       supabaseClient.from("instructors").select("*").order("created_at", { ascending: true }),
       supabaseClient.from("students").select("*").order("created_at", { ascending: true }),
       supabaseClient.from("bookings").select("*").order("lesson_date", { ascending: true }).order("lesson_time", { ascending: true }),
@@ -435,6 +493,16 @@ async function loadSupabaseState() {
       console.warn("Supabase students table is not ready", studentsResult.error);
     }
 
+    if (state.isAdmin) {
+      state.schoolsSchemaReady = !schoolsResult.error;
+      if (schoolsResult.error) {
+        console.warn("Supabase schools table is not ready", schoolsResult.error);
+      }
+    }
+
+    const remoteSchools = state.isAdmin && state.schoolsSchemaReady
+      ? schoolsResult.data.map(mapSchoolFromRow).filter(Boolean)
+      : localSchools;
     const remoteInstructors = instructorsResult.data.map(mapInstructorFromRow).filter(isVisibleInstructor);
     const remoteStudents = state.studentsSchemaReady
       ? studentsResult.data.map(mapStudentFromRow).filter(Boolean)
@@ -455,8 +523,10 @@ async function loadSupabaseState() {
 
     const shouldSyncLocalInstructors = state.isAdmin && remoteInstructors.length === 0 && localInstructors.length > 0;
     const shouldSyncLocalStudents = state.isAdmin && state.studentsSchemaReady && remoteStudents.length === 0 && localStudents.length > 0;
+    const shouldSyncLocalSchools = state.isAdmin && state.schoolsSchemaReady && remoteSchools.length === 0 && localSchools.length > 0;
     const shouldSyncLocalBookings = state.isAdmin && remoteBookings.length === 0 && localBookings.length > 0;
 
+    state.schools = shouldSyncLocalSchools ? localSchools : remoteSchools;
     state.instructors = shouldSyncLocalInstructors ? localInstructors : remoteInstructors;
     state.students = shouldSyncLocalStudents ? localStudents : remoteStudents;
     state.bookings = shouldSyncLocalBookings ? localBookings : remoteBookings;
@@ -470,11 +540,13 @@ async function loadSupabaseState() {
       : remoteSlots;
 
     await Promise.all([
+      shouldSyncLocalSchools ? syncSchoolsToSupabase(localSchools) : Promise.resolve(true),
       shouldSyncLocalInstructors ? syncInstructorsToSupabase(localInstructors) : Promise.resolve(true),
       shouldSyncLocalStudents ? syncStudentsToSupabase(localStudents) : Promise.resolve(true),
       shouldSyncLocalBookings ? syncBookingsToSupabase() : Promise.resolve(true),
     ]);
 
+    localStorage.setItem(SCHOOLS_KEY, JSON.stringify(state.schools));
     localStorage.setItem(INSTRUCTORS_KEY, JSON.stringify(state.instructors));
     localStorage.setItem(STUDENTS_KEY, JSON.stringify(state.students));
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state.bookings));
@@ -553,6 +625,36 @@ async function syncStudentsToSupabase(items = null) {
     return true;
   } catch (error) {
     console.error("Supabase students sync failed", error);
+    finishSyncError(error);
+    return false;
+  }
+}
+
+async function syncSchoolsToSupabase(items = null) {
+  const schoolsToSync = Array.isArray(items) ? items : state.schools;
+
+  if (!isSupabaseEnabled || !state.isAdmin || schoolsToSync.length === 0) {
+    showSyncIdleStatus();
+    return true;
+  }
+
+  if (!state.schoolsSchemaReady) {
+    finishSyncError(null, "Обновите схему Supabase");
+    return false;
+  }
+
+  startSyncStatus("Сохраняем автошколы");
+
+  try {
+    const { error } = await supabaseClient
+      .from("schools")
+      .upsert(schoolsToSync.map(mapSchoolToRow), { onConflict: "id" });
+
+    if (error) throw error;
+    finishSyncSuccess("Автошколы сохранены");
+    return true;
+  } catch (error) {
+    console.error("Supabase schools sync failed", error);
     finishSyncError(error);
     return false;
   }
@@ -777,6 +879,16 @@ function formatPhone(value) {
   return phone.replace(/^\+7(\d{3})(\d{3})(\d{2})(\d{2})$/, "+7 $1 $2-$3-$4");
 }
 
+function getRussianPlural(count, forms) {
+  const value = Math.abs(Number(count)) % 100;
+  const lastDigit = value % 10;
+
+  if (value > 10 && value < 20) return forms[2];
+  if (lastDigit > 1 && lastDigit < 5) return forms[1];
+  if (lastDigit === 1) return forms[0];
+  return forms[2];
+}
+
 function getInstructorByEmail(email) {
   const normalizedEmail = normalizeEmail(email);
   return state.instructors.find((instructor) => normalizeEmail(instructor.email) === normalizedEmail) ?? null;
@@ -790,6 +902,34 @@ function getInstructorByPhone(phone) {
 function normalizeInstructorStatus(status) {
   const normalized = String(status ?? "").trim().toLowerCase();
   return INSTRUCTOR_STATUSES.has(normalized) ? normalized : "approved";
+}
+
+function normalizeInviteKey(value) {
+  return String(value ?? "").trim().toUpperCase().replace(/\s+/g, "");
+}
+
+function normalizeSchool(school) {
+  if (!school || typeof school !== "object") {
+    return null;
+  }
+
+  const name = String(school.name ?? "").trim();
+  const inviteKey = normalizeInviteKey(school.inviteKey ?? school.invite_key);
+
+  if (!school.id || !name || !inviteKey) {
+    return null;
+  }
+
+  return {
+    id: String(school.id),
+    name,
+    slug: String(school.slug ?? `school-${String(school.id).slice(0, 8)}`).trim(),
+    inviteKey,
+    isActive: school.isActive ?? school.is_active ?? true,
+    createdBy: school.createdBy ?? school.created_by ?? null,
+    createdAt: school.createdAt ?? school.created_at ?? new Date().toISOString(),
+    updatedAt: school.updatedAt ?? school.updated_at ?? new Date().toISOString(),
+  };
 }
 
 function isInstructorApproved(instructor) {
@@ -856,6 +996,7 @@ function normalizeInstructor(instructor) {
     login,
     password: String(instructor.password ?? ""),
     status: normalizeInstructorStatus(instructor.status),
+    schoolId: instructor.schoolId ?? instructor.school_id ?? null,
     approvedAt: instructor.approvedAt ?? instructor.approved_at ?? null,
     approvedBy: instructor.approvedBy ?? instructor.approved_by ?? null,
     schedule: normalizeSettings(instructor.schedule),
@@ -935,6 +1076,14 @@ function getStudentByEmail(email) {
 function getStudentByPhone(phone) {
   const normalizedPhone = normalizePhone(phone);
   return state.students.find((student) => normalizePhone(student.phone) === normalizedPhone) ?? null;
+}
+
+function getSchoolById(schoolId) {
+  return state.schools.find((school) => school.id === schoolId) ?? null;
+}
+
+function getInstructorSchoolName(instructor) {
+  return getSchoolById(instructor?.schoolId)?.name ?? "Без автошколы";
 }
 
 function getInstructorName(instructor) {
@@ -1382,6 +1531,48 @@ function renderCurrentAdminName() {
   currentAdminName.textContent = state.isAdmin ? "Администратор" : "";
 }
 
+function renderSchoolList() {
+  if (!schoolList) return;
+
+  if (!state.isAdmin) {
+    schoolList.innerHTML = `<p class="empty-state">Войдите как администратор, чтобы управлять автошколами.</p>`;
+    return;
+  }
+
+  if (!state.schoolsSchemaReady) {
+    schoolList.innerHTML = `<p class="empty-state">Нужно обновить SQL-схему Supabase: добавить таблицу schools.</p>`;
+    return;
+  }
+
+  const schools = [...state.schools].sort((a, b) => a.name.localeCompare(b.name, "ru"));
+
+  if (schools.length === 0) {
+    schoolList.innerHTML = `<p class="empty-state">Автошкол пока нет. Создайте первую и выдайте ключ инструкторам.</p>`;
+    return;
+  }
+
+  schoolList.innerHTML = schools.map((school) => {
+    const instructorCount = state.instructors.filter((instructor) => instructor.schoolId === school.id).length;
+    return `
+      <article class="school-card ${school.isActive ? "" : "inactive"}">
+        <div>
+          <span class="status-pill">${school.isActive ? "активна" : "выключена"}</span>
+          <h3>${escapeHtml(school.name)}</h3>
+          <p>${instructorCount} ${getRussianPlural(instructorCount, ["инструктор", "инструктора", "инструкторов"])}</p>
+          <code>${escapeHtml(school.inviteKey)}</code>
+        </div>
+        <div class="card-actions">
+          <button type="button" data-copy-school-key="${escapeHtml(school.id)}">Скопировать ключ</button>
+          <button type="button" data-rotate-school-key="${escapeHtml(school.id)}">Новый ключ</button>
+          <button class="${school.isActive ? "danger-action" : "primary-action"}" type="button" data-toggle-school="${escapeHtml(school.id)}">
+            ${school.isActive ? "Выключить" : "Активировать"}
+          </button>
+        </div>
+      </article>
+    `;
+  }).join("");
+}
+
 function renderInstructorApprovalList() {
   if (!instructorApprovalList) return;
 
@@ -1414,7 +1605,7 @@ function renderInstructorApprovalList() {
           <span class="status-pill">${escapeHtml(getInstructorStatusLabel(status))}</span>
           <h3>${escapeHtml(getInstructorName(instructor))}</h3>
           <p>${escapeHtml(instructor.phone || "Телефон не указан")} · ${escapeHtml(instructor.email || "Email не указан")}</p>
-          <small>Логин: ${escapeHtml(instructor.login)}</small>
+          <small>Автошкола: ${escapeHtml(getInstructorSchoolName(instructor))} · Логин: ${escapeHtml(instructor.login)}</small>
         </div>
         <div class="card-actions">
           ${canApprove ? `<button class="primary-action" type="button" data-approve-instructor="${escapeHtml(instructor.id)}">Одобрить</button>` : ""}
@@ -1701,6 +1892,7 @@ function render() {
   renderCurrentInstructorName();
   renderCurrentStudentProfile();
   renderCurrentAdminName();
+  renderSchoolList();
   renderInstructorApprovalList();
   renderSettingsForm();
   renderNotifications();
@@ -1996,6 +2188,12 @@ function showApprovalNote(message, isError = false) {
   approvalNote.classList.toggle("error", isError);
 }
 
+function showSchoolNote(message, isError = false) {
+  if (!schoolNote) return;
+  schoolNote.textContent = message;
+  schoolNote.classList.toggle("error", isError);
+}
+
 function showStudentLoginNote(message, isError = false) {
   if (!studentLoginNote) return;
   studentLoginNote.textContent = message;
@@ -2105,6 +2303,7 @@ function getAuthProfileFromUser(user) {
     login,
     password: "",
     status: "pending",
+    schoolId: metadata.school_id ?? null,
     schedule: loadLegacySettings(),
     notifications: { ...DEFAULT_NOTIFICATIONS },
     createdAt: new Date().toISOString(),
@@ -2249,6 +2448,69 @@ function createId(prefix = "item") {
   }
 
   return `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+function createUuid() {
+  if (window.crypto?.randomUUID) {
+    return window.crypto.randomUUID();
+  }
+
+  return "10000000-1000-4000-8000-100000000000".replace(/[018]/g, (char) => (
+    (Number(char) ^ Math.random() * 16 >> Number(char) / 4).toString(16)
+  ));
+}
+
+function randomToken(length = 6) {
+  const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  const values = new Uint8Array(length);
+
+  if (window.crypto?.getRandomValues) {
+    window.crypto.getRandomValues(values);
+  } else {
+    values.forEach((_, index) => {
+      values[index] = Math.floor(Math.random() * 256);
+    });
+  }
+
+  return [...values].map((value) => alphabet[value % alphabet.length]).join("");
+}
+
+function generateSchoolKey() {
+  return `DRIVE-${randomToken(4)}-${randomToken(4)}`;
+}
+
+function generateSchoolSlug(name) {
+  const base = String(name ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-zа-яё0-9]+/gi, "-")
+    .replace(/^-+|-+$/g, "");
+
+  return `${base || "school"}-${randomToken(5).toLowerCase()}`;
+}
+
+async function findSchoolByInviteKey(inviteKey) {
+  if (!isSupabaseEnabled) {
+    return { school: null, error: new Error("Supabase is disabled") };
+  }
+
+  const normalizedKey = normalizeInviteKey(inviteKey);
+  if (!normalizedKey) {
+    return { school: null, error: null };
+  }
+
+  const { data, error } = await supabaseClient.rpc("get_school_by_invite_key", {
+    input_key: normalizedKey,
+  });
+
+  if (error) {
+    state.schoolsSchemaReady = false;
+    return { school: null, error };
+  }
+
+  state.schoolsSchemaReady = true;
+  const school = Array.isArray(data) ? data.map(mapSchoolFromRow).filter(Boolean).at(0) : null;
+  return { school: school ?? null, error: null };
 }
 
 function startEditBooking(id) {
@@ -2687,6 +2949,9 @@ async function handleLogin(event) {
     if (!authInstructor) {
       authInstructor = getAuthProfileFromUser(data.user);
       if (authInstructor) {
+        if (authInstructor.schoolId) {
+          state.schoolsSchemaReady = true;
+        }
         state.instructors.push(authInstructor);
         const isSaved = await saveInstructors([authInstructor]);
         if (!isSaved) {
@@ -2725,6 +2990,7 @@ async function handleRegister(event) {
   const patronymic = formData.get("patronymic").trim();
   const phone = formData.get("phone").trim();
   const email = normalizeEmail(formData.get("email"));
+  const schoolInviteKey = normalizeInviteKey(formData.get("schoolInviteKey"));
   const login = normalizeLogin(formData.get("registerLogin"));
   const password = formData.get("registerPassword").trim();
 
@@ -2733,8 +2999,8 @@ async function handleRegister(event) {
     return;
   }
 
-  if (!firstName || !lastName || !login || !phone || !email || !password) {
-    showRegisterNote("Заполните имя, фамилию, телефон, email, логин и пароль.", true);
+  if (!firstName || !lastName || !login || !phone || !email || !schoolInviteKey || !password) {
+    showRegisterNote("Заполните имя, фамилию, телефон, email, ключ автошколы, логин и пароль.", true);
     return;
   }
 
@@ -2768,7 +3034,22 @@ async function handleRegister(event) {
     return;
   }
 
-  startSyncStatus("Создаем кабинет");
+  startSyncStatus("Проверяем ключ автошколы");
+
+  const { school, error: schoolError } = await findSchoolByInviteKey(schoolInviteKey);
+  if (schoolError) {
+    showSyncIdleStatus();
+    showRegisterNote("Нужно обновить SQL-схему Supabase: добавить автошколы и ключи регистрации.", true);
+    return;
+  }
+
+  if (!school) {
+    showSyncIdleStatus();
+    showRegisterNote("Ключ автошколы не найден или выключен. Проверьте ключ у администратора.", true);
+    return;
+  }
+
+  setSyncStatus("syncing", "Создаем кабинет");
 
   const formattedPhone = formatPhone(phone);
   const { data, error } = await supabaseClient.auth.signUp({
@@ -2782,6 +3063,7 @@ async function handleRegister(event) {
         last_name: lastName,
         patronymic,
         phone: formattedPhone,
+        school_id: school.id,
       },
     },
   });
@@ -2802,6 +3084,7 @@ async function handleRegister(event) {
     login,
     password: "",
     status: "pending",
+    schoolId: school.id,
     approvedAt: null,
     approvedBy: null,
     schedule: loadLegacySettings(),
@@ -2875,6 +3158,152 @@ async function handleAdminLogin(event) {
   showAdminDashboard();
 }
 
+async function handleSchoolSubmit(event) {
+  event.preventDefault();
+
+  if (!state.isAdmin) {
+    showSchoolNote("Нужно войти как администратор.", true);
+    return;
+  }
+
+  if (!state.schoolsSchemaReady) {
+    showSchoolNote("Сначала обновите SQL-схему Supabase: добавьте таблицу schools.", true);
+    return;
+  }
+
+  const formData = new FormData(schoolForm);
+  const name = String(formData.get("schoolName") ?? "").trim();
+
+  if (!name) {
+    showSchoolNote("Введите название автошколы.", true);
+    return;
+  }
+
+  const school = normalizeSchool({
+    id: createUuid(),
+    name,
+    slug: generateSchoolSlug(name),
+    inviteKey: generateSchoolKey(),
+    isActive: true,
+    createdBy: state.currentAdminId,
+    createdAt: new Date().toISOString(),
+  });
+
+  startSyncStatus("Создаем автошколу");
+
+  const { data, error } = await supabaseClient
+    .from("schools")
+    .insert(mapSchoolToRow(school))
+    .select("*")
+    .single();
+
+  if (error) {
+    finishSyncError(error, "Не удалось создать автошколу");
+    showSchoolNote(describeSyncError(error), true);
+    return;
+  }
+
+  const savedSchool = mapSchoolFromRow(data);
+  state.schools.push(savedSchool);
+  localStorage.setItem(SCHOOLS_KEY, JSON.stringify(state.schools));
+  schoolForm.reset();
+  finishSyncSuccess("Автошкола создана");
+  showSchoolNote(`Автошкола создана. Ключ: ${savedSchool.inviteKey}`);
+  render();
+}
+
+async function updateSchool(schoolId, updates, successMessage) {
+  if (!state.isAdmin) {
+    showSchoolNote("Нужно войти как администратор.", true);
+    return false;
+  }
+
+  const school = getSchoolById(schoolId);
+  if (!school) {
+    showSchoolNote("Автошкола не найдена.", true);
+    return false;
+  }
+
+  startSyncStatus("Обновляем автошколу");
+
+  const { data, error } = await supabaseClient
+    .from("schools")
+    .update({
+      ...updates,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", schoolId)
+    .select("*")
+    .single();
+
+  if (error) {
+    finishSyncError(error, "Не удалось обновить автошколу");
+    showSchoolNote(describeSyncError(error), true);
+    return false;
+  }
+
+  const savedSchool = mapSchoolFromRow(data);
+  const index = state.schools.findIndex((item) => item.id === schoolId);
+  if (index >= 0) {
+    state.schools[index] = savedSchool;
+  }
+  localStorage.setItem(SCHOOLS_KEY, JSON.stringify(state.schools));
+  finishSyncSuccess("Автошкола обновлена");
+  showSchoolNote(successMessage(savedSchool));
+  render();
+  return true;
+}
+
+async function copySchoolKey(schoolId) {
+  const school = getSchoolById(schoolId);
+  if (!school) {
+    showSchoolNote("Автошкола не найдена.", true);
+    return;
+  }
+
+  try {
+    await navigator.clipboard.writeText(school.inviteKey);
+    showSchoolNote(`Ключ автошколы "${school.name}" скопирован.`);
+  } catch {
+    showSchoolNote(`Ключ: ${school.inviteKey}`);
+  }
+}
+
+function rotateSchoolKey(schoolId) {
+  const school = getSchoolById(schoolId);
+  if (!school) {
+    showSchoolNote("Автошкола не найдена.", true);
+    return;
+  }
+
+  const confirmed = window.confirm(`Выпустить новый ключ для "${school.name}"? Старый ключ перестанет работать.`);
+  if (!confirmed) {
+    return;
+  }
+
+  updateSchool(
+    schoolId,
+    { invite_key: generateSchoolKey() },
+    (savedSchool) => `Новый ключ создан: ${savedSchool.inviteKey}`,
+  );
+}
+
+function toggleSchoolStatus(schoolId) {
+  const school = getSchoolById(schoolId);
+  if (!school) {
+    showSchoolNote("Автошкола не найдена.", true);
+    return;
+  }
+
+  updateSchool(
+    schoolId,
+    { is_active: !school.isActive },
+    (savedSchool) => savedSchool.isActive
+      ? `"${savedSchool.name}" снова принимает регистрацию инструкторов.`
+      : `"${savedSchool.name}" выключена: новые инструкторы по ее ключу не зарегистрируются.`,
+  );
+}
+
 async function updateInstructorStatus(instructorId, status) {
   if (!state.isAdmin) {
     showApprovalNote("Нужно войти как администратор.", true);
@@ -2935,6 +3364,7 @@ studentRegisterForm?.addEventListener("submit", handleStudentRegister);
 loginForm?.addEventListener("submit", handleLogin);
 adminLoginForm?.addEventListener("submit", handleAdminLogin);
 registerForm?.addEventListener("submit", handleRegister);
+schoolForm?.addEventListener("submit", handleSchoolSubmit);
 logoutInstructor?.addEventListener("click", () => {
   setInstructorSession(null);
   if (isSupabaseEnabled) {
@@ -3017,6 +3447,26 @@ instructorApprovalList?.addEventListener("click", (event) => {
 
   if (blockButton) {
     updateInstructorStatus(blockButton.dataset.blockInstructor, "blocked");
+  }
+});
+
+schoolList?.addEventListener("click", (event) => {
+  const copyButton = event.target.closest("[data-copy-school-key]");
+  const rotateButton = event.target.closest("[data-rotate-school-key]");
+  const toggleButton = event.target.closest("[data-toggle-school]");
+
+  if (copyButton) {
+    copySchoolKey(copyButton.dataset.copySchoolKey);
+    return;
+  }
+
+  if (rotateButton) {
+    rotateSchoolKey(rotateButton.dataset.rotateSchoolKey);
+    return;
+  }
+
+  if (toggleButton) {
+    toggleSchoolStatus(toggleButton.dataset.toggleSchool);
   }
 });
 
