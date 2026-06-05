@@ -158,10 +158,30 @@
                 <span><i class="dot booked"></i>занято</span>
               </div>
             </div>
-            <label class="instructor-filter">
-              Инструктор
-              <select id="studentInstructorFilter" name="studentInstructorFilter"></select>
-            </label>
+
+            <div class="booking-steps" id="studentFlowSteps" aria-label="Шаги записи"></div>
+
+            <section class="mini-panel student-bookings-panel" aria-labelledby="student-bookings-title">
+              <div class="section-heading compact">
+                <div>
+                  <p class="eyebrow">Личный кабинет</p>
+                  <h3 id="student-bookings-title">Мои ближайшие занятия</h3>
+                </div>
+              </div>
+              <div class="student-booking-list" id="studentUpcomingBookings"></div>
+            </section>
+
+            <div class="student-filter-grid">
+              <label>
+                Автошкола
+                <select id="studentSchoolFilter" name="studentSchoolFilter"></select>
+              </label>
+              <label>
+                Инструктор
+                <select id="studentInstructorFilter" name="studentInstructorFilter"></select>
+              </label>
+            </div>
+            <div class="student-choice-summary" id="studentChoiceSummary"></div>
             <div class="day-tabs" id="dayTabs" role="tablist" aria-label="Дни занятий"></div>
             <div class="slot-grid" id="slotGrid" aria-live="polite"></div>
           </section>
@@ -373,6 +393,28 @@
             </div>
           </div>
           <p class="form-note" id="adminNote" role="status"></p>
+
+          <div class="instructor-dashboard-grid">
+            <section class="mini-panel" aria-labelledby="today-title">
+              <div class="section-heading compact">
+                <div>
+                  <p class="eyebrow">Сегодня</p>
+                  <h3 id="today-title">Занятия на день</h3>
+                </div>
+              </div>
+              <div class="compact-booking-list" id="todayBookingList"></div>
+            </section>
+
+            <section class="mini-panel" aria-labelledby="upcoming-title">
+              <div class="section-heading compact">
+                <div>
+                  <p class="eyebrow">План</p>
+                  <h3 id="upcoming-title">Ближайшие занятия</h3>
+                </div>
+              </div>
+              <div class="compact-booking-list" id="upcomingBookingList"></div>
+            </section>
+          </div>
 
           <section class="mini-panel" aria-labelledby="notification-title">
             <div class="section-heading compact">

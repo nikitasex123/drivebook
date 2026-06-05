@@ -568,6 +568,124 @@ textarea:focus {
   font-weight: 700;
 }
 
+.booking-steps {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(120px, 1fr));
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.booking-steps span {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 42px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0 12px;
+  background: #fff;
+  color: var(--muted);
+  font-weight: 800;
+}
+
+.booking-steps i {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  background: var(--surface-strong);
+  color: var(--muted);
+  font-style: normal;
+  font-size: 0.82rem;
+}
+
+.booking-steps span.complete {
+  border-color: rgba(31, 122, 90, 0.22);
+  background: var(--accent-soft);
+  color: var(--accent-dark);
+}
+
+.booking-steps span.complete i {
+  background: var(--accent);
+  color: #fff;
+}
+
+.student-filter-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(220px, 1fr));
+  gap: 14px;
+  margin-bottom: 14px;
+}
+
+.student-choice-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(160px, 1fr));
+  gap: 10px;
+  margin-bottom: 18px;
+}
+
+.student-choice-summary div {
+  min-height: 74px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px;
+  background: var(--surface-strong);
+}
+
+.student-choice-summary span,
+.student-choice-summary strong {
+  display: block;
+}
+
+.student-choice-summary span {
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-weight: 800;
+}
+
+.student-choice-summary strong {
+  margin-top: 6px;
+  line-height: 1.25;
+}
+
+.student-bookings-panel {
+  margin-bottom: 18px;
+}
+
+.student-booking-list,
+.compact-booking-list {
+  display: grid;
+  gap: 8px;
+}
+
+.student-booking-card,
+.compact-booking-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px;
+  background: #fff;
+}
+
+.student-booking-card strong,
+.student-booking-card span,
+.compact-booking-card strong,
+.compact-booking-card span {
+  display: block;
+}
+
+.student-booking-card span,
+.compact-booking-card span {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
 .success-banner {
   margin: 0 28px 28px;
   border: 1px solid #b9decf;
@@ -579,7 +697,8 @@ textarea:focus {
 }
 
 .success-banner strong,
-.success-banner span {
+.success-banner span,
+.success-banner small {
   display: block;
 }
 
@@ -587,6 +706,12 @@ textarea:focus {
   margin-top: 5px;
   color: var(--muted);
   font-weight: 700;
+}
+
+.success-banner small {
+  margin-top: 8px;
+  color: var(--accent-dark);
+  font-weight: 800;
 }
 
 .check-row {
@@ -946,22 +1071,82 @@ textarea:focus {
   font-weight: 800;
 }
 
+.status-pill.confirmed {
+  background: #e6f4ff;
+  color: #1f5d80;
+}
+
+.status-pill.completed {
+  background: #eef1f3;
+  color: #59636b;
+}
+
+.status-pill.cancelled {
+  background: #fff0f0;
+  color: var(--danger);
+}
+
+.muted-pill {
+  margin-left: 6px;
+  background: var(--surface-strong);
+  color: var(--muted);
+}
+
 .card-actions {
   display: flex;
   justify-content: flex-end;
   gap: 8px;
+  flex-wrap: wrap;
 }
 
-.booking-card button {
+.booking-card button,
+.booking-card a {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  border-radius: 8px;
+  padding: 0 14px;
   border: 1px solid var(--line);
   background: #fff;
   color: var(--ink);
+  font-weight: 800;
+  text-decoration: none;
 }
 
 .booking-card .danger-action {
   border-color: #f0caca;
   background: #fff5f5;
   color: var(--danger);
+}
+
+.booking-card.cancelled,
+.calendar-booking.cancelled,
+.compact-booking-card.cancelled {
+  opacity: 0.72;
+}
+
+.instructor-dashboard-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(260px, 1fr));
+  gap: 14px;
+  margin-bottom: 18px;
+}
+
+.compact-actions {
+  display: grid;
+  justify-items: end;
+  gap: 8px;
+}
+
+.compact-actions button {
+  min-height: 36px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0 12px;
+  background: #fff;
+  color: var(--ink);
+  font-weight: 800;
 }
 
 .danger-action {
@@ -1286,6 +1471,8 @@ textarea:focus {
   .booking-card,
   .school-form,
   .school-card,
+  .instructor-dashboard-grid,
+  .student-choice-summary,
   .moderation-card {
     grid-template-columns: 1fr;
   }
@@ -1392,12 +1579,20 @@ textarea:focus {
 
   .day-tabs,
   .slot-grid,
+  .booking-steps,
+  .student-filter-grid,
   .weekday-grid,
   .settings-grid,
   .settings-grid.two-column,
   .notification-settings,
   .analytics-cards {
     grid-template-columns: 1fr 1fr;
+  }
+
+  .student-choice-summary,
+  .student-booking-card,
+  .compact-booking-card {
+    grid-template-columns: 1fr;
   }
 
   .calendar-grid {

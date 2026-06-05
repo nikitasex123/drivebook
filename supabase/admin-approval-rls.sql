@@ -51,7 +51,23 @@ end;
 $$;
 
 alter table public.bookings
-  add column if not exists student_id text;
+  add column if not exists student_id text,
+  add column if not exists status text not null default 'new';
+
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_constraint
+    where conname = 'bookings_status_check'
+      and conrelid = 'public.bookings'::regclass
+  ) then
+    alter table public.bookings
+      add constraint bookings_status_check
+      check (status in ('new', 'confirmed', 'completed', 'cancelled'));
+  end if;
+end;
+$$;
 
 do $$
 begin
@@ -82,7 +98,17 @@ select
   lesson_date,
   lesson_time,
   instructor_id
-from public.bookings;
+from public.bookings
+where status <> 'cancelled';
+
+create or replace view public.school_directory as
+select
+  id,
+  name,
+  slug,
+  is_active
+from public.schools
+where is_active = true;
 
 create or replace function public.touch_updated_at()
 returns trigger
@@ -330,6 +356,7 @@ for each row execute function public.touch_updated_at();
 
 grant select, insert, update on public.schools to authenticated;
 grant select on public.booked_slots to anon, authenticated;
+grant select on public.school_directory to anon, authenticated;
 grant execute on function public.is_drivebook_admin() to anon, authenticated;
 grant execute on function public.is_active_school(uuid) to anon, authenticated;
 grant execute on function public.get_school_by_invite_key(text) to anon, authenticated;

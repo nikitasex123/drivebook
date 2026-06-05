@@ -60,10 +60,12 @@ create table if not exists public.bookings (
   student_id text references public.students(id) on delete set null,
   instructor_id text not null references public.instructors(id) on delete cascade,
   instructor_name text not null,
+  status text not null default 'new',
   comment text default '',
   mailing boolean not null default false,
   created_at timestamptz not null default now(),
-  updated_at timestamptz
+  updated_at timestamptz,
+  constraint bookings_status_check check (status in ('new', 'confirmed', 'completed', 'cancelled'))
 );
 
 create index if not exists bookings_instructor_date_idx
@@ -84,7 +86,17 @@ select
   lesson_date,
   lesson_time,
   instructor_id
-from public.bookings;
+from public.bookings
+where status <> 'cancelled';
+
+create or replace view public.school_directory as
+select
+  id,
+  name,
+  slug,
+  is_active
+from public.schools
+where is_active = true;
 
 create or replace function public.touch_updated_at()
 returns trigger
@@ -304,6 +316,7 @@ for each row execute function public.touch_updated_at();
 
 grant select, insert, update on public.schools to authenticated;
 grant select on public.booked_slots to anon, authenticated;
+grant select on public.school_directory to anon, authenticated;
 grant execute on function public.is_drivebook_admin() to anon, authenticated;
 grant execute on function public.is_active_school(uuid) to anon, authenticated;
 grant execute on function public.get_school_by_invite_key(text) to anon, authenticated;

@@ -7,8 +7,10 @@ const INSTRUCTOR_SESSION_KEY = "driveBookInstructorSession";
 const STUDENT_SESSION_KEY = "driveBookStudentSession";
 const ADMIN_SESSION_KEY = "driveBookAdminSession";
 const ANY_INSTRUCTOR_ID = "any";
+const ALL_SCHOOLS_ID = "all";
 const INTERNAL_TEST_INSTRUCTOR_IDS = new Set(["codex-test-instructor"]);
 const INSTRUCTOR_STATUSES = new Set(["pending", "approved", "blocked"]);
+const BOOKING_STATUSES = new Set(["new", "confirmed", "completed", "cancelled"]);
 const DAY_COUNT = 7;
 const DRAWER_TRANSITION_MS = 300;
 const MIN_PASSWORD_LENGTH = 8;
@@ -51,6 +53,7 @@ const isSupabaseEnabled = Boolean(supabaseClient);
 const state = {
   activeDate: null,
   selectedSlot: null,
+  selectedSchoolId: ALL_SCHOOLS_ID,
   selectedInstructorId: ANY_INSTRUCTOR_ID,
   editingId: null,
   calendarStart: getStartOfWeek(new Date()),
@@ -65,6 +68,7 @@ const state = {
   isAdmin: false,
   studentsSchemaReady: false,
   schoolsSchemaReady: false,
+  bookingStatusSchemaReady: false,
 };
 
 const syncStatus = document.querySelector("#syncStatus");
@@ -100,7 +104,11 @@ const logoutStudent = document.querySelector("#logoutStudent");
 const logoutAdmin = document.querySelector("#logoutAdmin");
 const backHomeButtons = document.querySelectorAll("[data-back-home]");
 const bookingView = document.querySelector("#bookingView");
+const studentFlowSteps = document.querySelector("#studentFlowSteps");
+const studentSchoolFilter = document.querySelector("#studentSchoolFilter");
 const studentInstructorFilter = document.querySelector("#studentInstructorFilter");
+const studentChoiceSummary = document.querySelector("#studentChoiceSummary");
+const studentUpcomingBookings = document.querySelector("#studentUpcomingBookings");
 const dayTabs = document.querySelector("#dayTabs");
 const slotGrid = document.querySelector("#slotGrid");
 const bookingDrawer = document.querySelector("#bookingDrawer");
@@ -126,6 +134,8 @@ const calendarView = document.querySelector("#calendarView");
 const analyticsView = document.querySelector("#analyticsView");
 const settingsView = document.querySelector("#settingsView");
 const notificationList = document.querySelector("#notificationList");
+const todayBookingList = document.querySelector("#todayBookingList");
+const upcomingBookingList = document.querySelector("#upcomingBookingList");
 const calendarWeekLabel = document.querySelector("#calendarWeekLabel");
 const calendarGrid = document.querySelector("#calendarGrid");
 const analyticsCards = document.querySelector("#analyticsCards");
@@ -308,6 +318,16 @@ function mapSchoolFromRow(row) {
   });
 }
 
+function mapSchoolDirectoryFromRow(row) {
+  return normalizeSchool({
+    id: row.id,
+    name: row.name,
+    slug: row.slug,
+    inviteKey: "",
+    isActive: row.is_active,
+  });
+}
+
 function mapSchoolToRow(school) {
   return {
     id: school.id,
@@ -411,6 +431,7 @@ function normalizeBooking(booking) {
     instructorId: booking.instructorId ?? booking.instructor_id ?? "",
     instructorName: booking.instructorName ?? booking.instructor_name ?? booking.instructor ?? "Инструктор не назначен",
     instructor: booking.instructor ?? booking.instructorName ?? booking.instructor_name ?? "Инструктор не назначен",
+    status: normalizeBookingStatus(booking.status),
     comment: String(booking.comment ?? "").trim(),
     mailing: Boolean(booking.mailing),
     createdAt: booking.createdAt ?? booking.created_at ?? new Date().toISOString(),
@@ -430,6 +451,7 @@ function mapBookingFromRow(row) {
     instructorId: row.instructor_id,
     instructorName: row.instructor_name,
     instructor: row.instructor_name,
+    status: row.status,
     comment: row.comment,
     mailing: row.mailing,
     createdAt: row.created_at,
@@ -458,6 +480,10 @@ function mapBookingToRow(booking) {
     row.student_id = normalized.studentId || null;
   }
 
+  if (state.bookingStatusSchemaReady) {
+    row.status = normalized.status;
+  }
+
   return row;
 }
 
@@ -476,13 +502,14 @@ async function loadSupabaseState() {
     const localBookings = [...state.bookings];
     const schoolsRequest = state.isAdmin
       ? supabaseClient.from("schools").select("*").order("created_at", { ascending: true })
-      : Promise.resolve({ data: [], error: null });
-    const [schoolsResult, instructorsResult, studentsResult, bookingsResult, slotsResult] = await Promise.all([
+      : supabaseClient.from("school_directory").select("*").order("name", { ascending: true });
+    const [schoolsResult, instructorsResult, studentsResult, bookingsResult, slotsResult, statusSchemaResult] = await Promise.all([
       schoolsRequest,
       supabaseClient.from("instructors").select("*").order("created_at", { ascending: true }),
       supabaseClient.from("students").select("*").order("created_at", { ascending: true }),
       supabaseClient.from("bookings").select("*").order("lesson_date", { ascending: true }).order("lesson_time", { ascending: true }),
       supabaseClient.from("booked_slots").select("*"),
+      supabaseClient.from("bookings").select("status").limit(1),
     ]);
 
     if (instructorsResult.error) throw instructorsResult.error;
@@ -493,15 +520,17 @@ async function loadSupabaseState() {
       console.warn("Supabase students table is not ready", studentsResult.error);
     }
 
-    if (state.isAdmin) {
-      state.schoolsSchemaReady = !schoolsResult.error;
-      if (schoolsResult.error) {
-        console.warn("Supabase schools table is not ready", schoolsResult.error);
-      }
+    state.schoolsSchemaReady = !schoolsResult.error;
+    if (schoolsResult.error) {
+      console.warn("Supabase schools table is not ready", schoolsResult.error);
+    }
+    state.bookingStatusSchemaReady = !statusSchemaResult.error;
+    if (statusSchemaResult.error) {
+      console.warn("Supabase booking status column is not ready", statusSchemaResult.error);
     }
 
-    const remoteSchools = state.isAdmin && state.schoolsSchemaReady
-      ? schoolsResult.data.map(mapSchoolFromRow).filter(Boolean)
+    const remoteSchools = state.schoolsSchemaReady
+      ? schoolsResult.data.map(state.isAdmin ? mapSchoolFromRow : mapSchoolDirectoryFromRow).filter(Boolean)
       : localSchools;
     const remoteInstructors = instructorsResult.data.map(mapInstructorFromRow).filter(isVisibleInstructor);
     const remoteStudents = state.studentsSchemaReady
@@ -904,6 +933,19 @@ function normalizeInstructorStatus(status) {
   return INSTRUCTOR_STATUSES.has(normalized) ? normalized : "approved";
 }
 
+function normalizeBookingStatus(status) {
+  const normalized = String(status ?? "").trim().toLowerCase();
+  return BOOKING_STATUSES.has(normalized) ? normalized : "new";
+}
+
+function isBookingCancelled(booking) {
+  return normalizeBookingStatus(booking?.status) === "cancelled";
+}
+
+function isBookingActive(booking) {
+  return !isBookingCancelled(booking);
+}
+
 function normalizeInviteKey(value) {
   return String(value ?? "").trim().toUpperCase().replace(/\s+/g, "");
 }
@@ -916,7 +958,7 @@ function normalizeSchool(school) {
   const name = String(school.name ?? "").trim();
   const inviteKey = normalizeInviteKey(school.inviteKey ?? school.invite_key);
 
-  if (!school.id || !name || !inviteKey) {
+  if (!school.id || !name) {
     return null;
   }
 
@@ -946,6 +988,20 @@ function isInstructorBlocked(instructor) {
 
 function getPublicInstructors() {
   return state.instructors.filter((instructor) => isVisibleInstructor(instructor) && isInstructorApproved(instructor));
+}
+
+function getActiveSchools() {
+  return state.schools.filter((school) => school.isActive);
+}
+
+function getStudentVisibleInstructors() {
+  const instructors = getPublicInstructors();
+
+  if (state.selectedSchoolId === ALL_SCHOOLS_ID) {
+    return instructors;
+  }
+
+  return instructors.filter((instructor) => instructor.schoolId === state.selectedSchoolId);
 }
 
 function normalizeStudent(student) {
@@ -1082,6 +1138,11 @@ function getSchoolById(schoolId) {
   return state.schools.find((school) => school.id === schoolId) ?? null;
 }
 
+function getSchoolBySlug(slug) {
+  const normalizedSlug = String(slug ?? "").trim();
+  return state.schools.find((school) => school.slug === normalizedSlug) ?? null;
+}
+
 function getInstructorSchoolName(instructor) {
   return getSchoolById(instructor?.schoolId)?.name ?? "Без автошколы";
 }
@@ -1121,6 +1182,39 @@ function getBookingInstructorName(booking) {
   return booking.instructorName ?? (instructor ? getInstructorName(instructor) : booking.instructor) ?? "Инструктор не назначен";
 }
 
+function getBookingStatusLabel(status) {
+  const normalized = normalizeBookingStatus(status);
+  if (normalized === "confirmed") return "подтверждена";
+  if (normalized === "completed") return "завершена";
+  if (normalized === "cancelled") return "отменена";
+  return "новая";
+}
+
+function getStatusActionLabel(status) {
+  const normalized = normalizeBookingStatus(status);
+  if (normalized === "confirmed") return "Завершить";
+  if (normalized === "completed") return "Вернуть в подтвержденные";
+  if (normalized === "cancelled") return "Вернуть в новые";
+  return "Подтвердить";
+}
+
+function getNextBookingStatus(status) {
+  const normalized = normalizeBookingStatus(status);
+  if (normalized === "confirmed") return "completed";
+  if (normalized === "completed") return "confirmed";
+  if (normalized === "cancelled") return "new";
+  return "confirmed";
+}
+
+function formatPhoneHref(value) {
+  const normalized = normalizePhone(value);
+  return normalized || String(value ?? "").replace(/[^\d+]/g, "");
+}
+
+function getBookingStartsAt(booking) {
+  return getBookingStartDate(booking.date, booking.time);
+}
+
 function getCurrentInstructorBookings() {
   const currentInstructor = getCurrentInstructor();
   if (!currentInstructor) {
@@ -1128,6 +1222,15 @@ function getCurrentInstructorBookings() {
   }
 
   return state.bookings.filter((booking) => getBookingInstructorId(booking) === currentInstructor.id);
+}
+
+function getCurrentStudentBookings() {
+  const currentStudent = getCurrentStudent();
+  if (!currentStudent) {
+    return [];
+  }
+
+  return state.bookings.filter((booking) => booking.studentId === currentStudent.id);
 }
 
 function toDateKey(date) {
@@ -1168,7 +1271,7 @@ function getBlockedDate(settings, dateKey) {
 }
 
 function getStudentInstructorCandidates() {
-  const instructors = getPublicInstructors();
+  const instructors = getStudentVisibleInstructors();
 
   if (state.selectedInstructorId === ANY_INSTRUCTOR_ID) {
     return instructors;
@@ -1250,6 +1353,7 @@ function isSlotInSchedule(instructor, dateKey, time) {
 function isSlotBooked(dateKey, time, instructorId, ignoredId = null) {
   const bookingMatches = state.bookings.some((booking) => (
     booking.id !== ignoredId
+    && isBookingActive(booking)
     && booking.date === dateKey
     && booking.time === time
     && getBookingInstructorId(booking) === instructorId
@@ -1266,7 +1370,7 @@ function isSlotBooked(dateKey, time, instructorId, ignoredId = null) {
 
 function countInstructorBookings(instructorId, dateKey) {
   return state.bookings.filter((booking) => (
-    booking.date === dateKey && getBookingInstructorId(booking) === instructorId
+    isBookingActive(booking) && booking.date === dateKey && getBookingInstructorId(booking) === instructorId
   )).length;
 }
 
@@ -1291,8 +1395,8 @@ function getAvailableTimesForInstructor(instructor, dateKey, options = {}) {
 function findAvailableInstructorForSlot(dateKey, time, requestedInstructorId = state.selectedInstructorId, ignoredId = null, options = {}) {
   const { respectAdvance = true } = options;
   const candidates = requestedInstructorId === ANY_INSTRUCTOR_ID
-    ? getPublicInstructors()
-    : getPublicInstructors().filter((instructor) => instructor.id === requestedInstructorId);
+    ? getStudentVisibleInstructors()
+    : getStudentVisibleInstructors().filter((instructor) => instructor.id === requestedInstructorId);
 
   return candidates
     .filter((instructor) => (
@@ -1326,10 +1430,73 @@ function formatSlot(dateKey, time) {
   return `${fullDateFormatter.format(date)}, ${time}`;
 }
 
+function applySchoolFromUrl() {
+  const params = new URLSearchParams(window.location.search);
+  const schoolSlug = params.get("school");
+  if (!schoolSlug) return;
+
+  const school = getSchoolBySlug(schoolSlug);
+  if (school) {
+    state.selectedSchoolId = school.id;
+  }
+}
+
+function renderStudentFlowSteps() {
+  if (!studentFlowSteps) return;
+
+  const schoolReady = state.selectedSchoolId !== ALL_SCHOOLS_ID || getActiveSchools().length <= 1;
+  const instructorReady = state.selectedInstructorId !== ANY_INSTRUCTOR_ID || getStudentVisibleInstructors().length > 0;
+  const slotReady = Boolean(state.selectedSlot);
+  const steps = [
+    ["Автошкола", schoolReady],
+    ["Время", instructorReady && Boolean(state.activeDate)],
+    ["Данные", slotReady],
+  ];
+
+  studentFlowSteps.innerHTML = steps.map(([label, isReady], index) => `
+    <span class="${isReady ? "complete" : ""}">
+      <i>${index + 1}</i>
+      ${escapeHtml(label)}
+    </span>
+  `).join("");
+}
+
+function renderStudentSchoolFilter() {
+  if (!studentSchoolFilter) return;
+
+  const schools = getActiveSchools();
+
+  if (schools.length === 0) {
+    state.selectedSchoolId = ALL_SCHOOLS_ID;
+    studentSchoolFilter.disabled = true;
+    studentSchoolFilter.innerHTML = `<option value="${ALL_SCHOOLS_ID}">Все автошколы</option>`;
+    return;
+  }
+
+  const selectedExists = state.selectedSchoolId === ALL_SCHOOLS_ID || schools.some((school) => school.id === state.selectedSchoolId);
+  if (!selectedExists) {
+    state.selectedSchoolId = ALL_SCHOOLS_ID;
+  }
+
+  studentSchoolFilter.disabled = schools.length === 1;
+  studentSchoolFilter.innerHTML = [
+    schools.length > 1 ? `<option value="${ALL_SCHOOLS_ID}">Все автошколы</option>` : "",
+    ...schools.map((school) => (
+      `<option value="${escapeHtml(school.id)}">${escapeHtml(school.name)}</option>`
+    )),
+  ].join("");
+
+  if (schools.length === 1) {
+    state.selectedSchoolId = schools[0].id;
+  }
+
+  studentSchoolFilter.value = state.selectedSchoolId;
+}
+
 function renderStudentInstructorFilter() {
   if (!studentInstructorFilter) return;
 
-  const instructors = getPublicInstructors();
+  const instructors = getStudentVisibleInstructors();
   const hasInstructors = instructors.length > 0;
 
   if (!hasInstructors) {
@@ -1352,6 +1519,54 @@ function renderStudentInstructorFilter() {
     )),
   ].join("");
   studentInstructorFilter.value = state.selectedInstructorId;
+}
+
+function renderStudentChoiceSummary() {
+  if (!studentChoiceSummary) return;
+
+  const school = state.selectedSchoolId === ALL_SCHOOLS_ID ? null : getSchoolById(state.selectedSchoolId);
+  const instructor = state.selectedInstructorId === ANY_INSTRUCTOR_ID ? null : getInstructorById(state.selectedInstructorId);
+  const selectedTime = state.selectedSlot ? formatSlot(state.selectedSlot.date, state.selectedSlot.time) : "Выберите день и время";
+
+  studentChoiceSummary.innerHTML = `
+    <div>
+      <span>Автошкола</span>
+      <strong>${escapeHtml(school?.name ?? "Все доступные")}</strong>
+    </div>
+    <div>
+      <span>Инструктор</span>
+      <strong>${escapeHtml(instructor ? getInstructorName(instructor) : "Любой свободный")}</strong>
+    </div>
+    <div>
+      <span>Занятие</span>
+      <strong>${escapeHtml(selectedTime)}</strong>
+    </div>
+  `;
+}
+
+function renderStudentUpcomingBookings() {
+  if (!studentUpcomingBookings) return;
+
+  const bookings = getCurrentStudentBookings()
+    .filter(isBookingActive)
+    .filter((booking) => getBookingStartsAt(booking) >= new Date())
+    .sort((a, b) => getBookingStartsAt(a) - getBookingStartsAt(b))
+    .slice(0, 3);
+
+  if (bookings.length === 0) {
+    studentUpcomingBookings.innerHTML = `<p class="empty-state compact-empty">У вас пока нет будущих занятий.</p>`;
+    return;
+  }
+
+  studentUpcomingBookings.innerHTML = bookings.map((booking) => `
+    <article class="student-booking-card">
+      <div>
+        <strong>${escapeHtml(formatSlot(booking.date, booking.time))}</strong>
+        <span>${escapeHtml(getBookingInstructorName(booking))}</span>
+      </div>
+      <span class="status-pill ${escapeHtml(booking.status)}">${escapeHtml(getBookingStatusLabel(booking.status))}</span>
+    </article>
+  `).join("");
 }
 
 function renderDays() {
@@ -1391,6 +1606,11 @@ function renderSlots() {
 
   if (getPublicInstructors().length === 0) {
     slotGrid.innerHTML = `<p class="empty-state">Пока нет одобренных инструкторов. Администратор должен подтвердить кабинет инструктора.</p>`;
+    return;
+  }
+
+  if (getStudentVisibleInstructors().length === 0) {
+    slotGrid.innerHTML = `<p class="empty-state">В выбранной автошколе пока нет одобренных инструкторов.</p>`;
     return;
   }
 
@@ -1461,7 +1681,7 @@ function renderBookings() {
 
   bookingList.innerHTML = bookings
     .map((booking) => `
-      <article class="booking-card ${state.editingId === booking.id ? "editing" : ""}">
+      <article class="booking-card ${state.editingId === booking.id ? "editing" : ""} ${escapeHtml(booking.status)}">
         <div>
           <p class="booking-time">${formatSlot(booking.date, booking.time)}</p>
           <p>${escapeHtml(getBookingInstructorName(booking))}</p>
@@ -1471,10 +1691,17 @@ function renderBookings() {
           <p>${escapeHtml(booking.phone)}${booking.email ? ` · ${escapeHtml(booking.email)}` : ""}</p>
         </div>
         <div>
-          <span class="status-pill">${booking.mailing ? "email включен" : "только связь"}</span>
+          <span class="status-pill ${escapeHtml(booking.status)}">${escapeHtml(getBookingStatusLabel(booking.status))}</span>
+          <span class="status-pill muted-pill">${booking.mailing ? "email включен" : "только связь"}</span>
           <p>${booking.comment ? escapeHtml(booking.comment) : "Без комментария"}</p>
         </div>
         <div class="card-actions">
+          <a href="tel:${escapeHtml(formatPhoneHref(booking.phone))}">Позвонить</a>
+          ${booking.email ? `<a href="mailto:${escapeHtml(booking.email)}">Email</a>` : ""}
+          <button type="button" data-status-booking="${escapeHtml(booking.id)}" data-booking-status="${escapeHtml(getNextBookingStatus(booking.status))}">
+            ${escapeHtml(getStatusActionLabel(booking.status))}
+          </button>
+          ${normalizeBookingStatus(booking.status) !== "cancelled" ? `<button class="danger-action" type="button" data-status-booking="${escapeHtml(booking.id)}" data-booking-status="cancelled">Отменить</button>` : ""}
           <button type="button" data-edit="${booking.id}">Изменить</button>
           <button class="danger-action" type="button" data-delete="${booking.id}">Удалить</button>
         </div>
@@ -1691,11 +1918,49 @@ function getUpcomingBookings(daysAhead = 14) {
   const end = addDays(now, daysAhead);
 
   return getCurrentInstructorBookings()
+    .filter(isBookingActive)
     .filter((booking) => {
       const startsAt = getBookingStartDate(booking.date, booking.time);
       return startsAt >= now && startsAt <= end;
     })
     .sort((a, b) => getBookingStartDate(a.date, a.time) - getBookingStartDate(b.date, b.time));
+}
+
+function renderCompactBookingList(target, bookings, emptyText) {
+  if (!target) return;
+
+  if (bookings.length === 0) {
+    target.innerHTML = `<p class="empty-state compact-empty">${escapeHtml(emptyText)}</p>`;
+    return;
+  }
+
+  target.innerHTML = bookings.map((booking) => `
+    <article class="compact-booking-card ${escapeHtml(booking.status)}">
+      <div>
+        <strong>${escapeHtml(booking.time)} · ${escapeHtml(booking.name)}</strong>
+        <span>${escapeHtml(formatSlot(booking.date, booking.time))}</span>
+        <span>${escapeHtml(booking.phone)}${booking.comment ? ` · ${escapeHtml(booking.comment)}` : ""}</span>
+      </div>
+      <div class="compact-actions">
+        <span class="status-pill ${escapeHtml(booking.status)}">${escapeHtml(getBookingStatusLabel(booking.status))}</span>
+        <button type="button" data-edit="${escapeHtml(booking.id)}">Открыть</button>
+      </div>
+    </article>
+  `).join("");
+}
+
+function renderInstructorTodayPanel() {
+  const todayKey = toDateKey(new Date());
+  const bookings = getCurrentInstructorBookings()
+    .filter(isBookingActive)
+    .filter((booking) => booking.date === todayKey)
+    .sort((a, b) => a.time.localeCompare(b.time));
+
+  renderCompactBookingList(todayBookingList, bookings, "На сегодня занятий нет.");
+}
+
+function renderInstructorUpcomingPanel() {
+  renderCompactBookingList(upcomingBookingList, getUpcomingBookings(14).slice(0, 4), "Ближайших занятий пока нет.");
 }
 
 function renderNotifications() {
@@ -1764,9 +2029,9 @@ function renderCalendar() {
           </div>
           <div class="calendar-bookings">
             ${dayBookings.length ? dayBookings.map((booking) => `
-              <button class="calendar-booking" type="button" data-edit="${escapeHtml(booking.id)}">
+              <button class="calendar-booking ${escapeHtml(booking.status)}" type="button" data-edit="${escapeHtml(booking.id)}">
                 <strong>${escapeHtml(booking.time)} · ${escapeHtml(booking.name)}</strong>
-                <span>${escapeHtml(booking.phone)}${booking.comment ? ` · ${escapeHtml(booking.comment)}` : ""}</span>
+                <span>${escapeHtml(getBookingStatusLabel(booking.status))} · ${escapeHtml(booking.phone)}${booking.comment ? ` · ${escapeHtml(booking.comment)}` : ""}</span>
               </button>
             `).join("") : `<p class="calendar-empty">Записей нет</p>`}
           </div>
@@ -1786,7 +2051,7 @@ function renderAnalytics() {
     return;
   }
 
-  const bookings = getCurrentInstructorBookings();
+  const bookings = getCurrentInstructorBookings().filter(isBookingActive);
   const now = new Date();
   const inSevenDays = addDays(now, 7);
   const upcoming = bookings.filter((booking) => {
@@ -1884,7 +2149,11 @@ function renderEditForm() {
 }
 
 function render() {
+  renderStudentSchoolFilter();
   renderStudentInstructorFilter();
+  renderStudentFlowSteps();
+  renderStudentChoiceSummary();
+  renderStudentUpcomingBookings();
   renderDays();
   renderSlots();
   renderSelectedSlot();
@@ -1895,6 +2164,8 @@ function render() {
   renderSchoolList();
   renderInstructorApprovalList();
   renderSettingsForm();
+  renderInstructorTodayPanel();
+  renderInstructorUpcomingPanel();
   renderNotifications();
   renderCalendar();
   renderAnalytics();
@@ -1953,6 +2224,7 @@ function showBookingSuccess(booking) {
   bookingSuccess.innerHTML = `
     <strong>Вы успешно записаны на занятие.</strong>
     <span>${formatSlot(booking.date, booking.time)} · ${escapeHtml(getBookingInstructorName(booking))}</span>
+    <small>Запись появилась в вашем кабинете ученика и в журнале инструктора.</small>
   `;
   bookingSuccess.hidden = false;
 }
@@ -2021,7 +2293,7 @@ function showStudentRegisterMode() {
 }
 
 function showStudentLoginScreen() {
-  window.history.replaceState(null, "", "index.html#student");
+  window.history.replaceState(null, "", `index.html${window.location.search}#student`);
   showAppScreen("student-login");
   showStudentLoginMode();
 }
@@ -2032,7 +2304,7 @@ function showStudentBooking() {
     return;
   }
 
-  window.history.replaceState(null, "", "index.html#student");
+  window.history.replaceState(null, "", `index.html${window.location.search}#student`);
   showAppScreen("student");
   render();
 }
@@ -2428,6 +2700,7 @@ function handleSubmit(event) {
     instructorId: assignedInstructor.id,
     instructorName,
     instructor: instructorName,
+    status: "new",
     comment: formData.get("comment").trim(),
     mailing,
     createdAt: new Date().toISOString(),
@@ -2595,6 +2868,59 @@ function updateBooking(event) {
   showAdminNote("Заявка обновлена.");
   render();
   closeDrawer(editDrawer);
+}
+
+async function updateBookingStatus(bookingId, nextStatus) {
+  const booking = state.bookings.find((item) => item.id === bookingId);
+  const currentInstructor = getCurrentInstructor();
+
+  if (!booking || !currentInstructor || getBookingInstructorId(booking) !== currentInstructor.id) {
+    showAdminNote("Эта заявка не относится к текущему инструктору.", true);
+    return;
+  }
+
+  const normalizedStatus = normalizeBookingStatus(nextStatus);
+  const previousStatus = booking.status;
+
+  if (isSupabaseEnabled && !state.bookingStatusSchemaReady) {
+    showAdminNote("Нужно обновить SQL-схему Supabase: добавить статусы заявок.", true);
+    return;
+  }
+
+  Object.assign(booking, {
+    status: normalizedStatus,
+    updatedAt: new Date().toISOString(),
+  });
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(state.bookings));
+  render();
+
+  if (!isSupabaseEnabled) {
+    showAdminNote(`Статус изменен: ${getBookingStatusLabel(normalizedStatus)}.`);
+    return;
+  }
+
+  startSyncStatus("Обновляем статус");
+
+  const { error } = await supabaseClient
+    .from("bookings")
+    .update({
+      status: normalizedStatus,
+      updated_at: booking.updatedAt,
+    })
+    .eq("id", booking.id);
+
+  if (error) {
+    booking.status = previousStatus;
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state.bookings));
+    finishSyncError(error, "Не удалось обновить статус");
+    showAdminNote(describeSyncError(error), true);
+    render();
+    return;
+  }
+
+  finishSyncSuccess("Статус обновлен");
+  showAdminNote(`Статус изменен: ${getBookingStatusLabel(normalizedStatus)}.`);
+  render();
 }
 
 function deleteBooking(id) {
@@ -3396,6 +3722,16 @@ studentInstructorFilter?.addEventListener("change", () => {
   render();
 });
 
+studentSchoolFilter?.addEventListener("change", () => {
+  state.selectedSchoolId = studentSchoolFilter.value;
+  state.selectedInstructorId = ANY_INSTRUCTOR_ID;
+  state.activeDate = null;
+  state.selectedSlot = null;
+  hideBookingSuccess();
+  showNote("");
+  render();
+});
+
 dayTabs?.addEventListener("click", (event) => {
   const tab = event.target.closest("[data-date]");
   if (!tab) return;
@@ -3425,6 +3761,12 @@ slotGrid?.addEventListener("click", (event) => {
 bookingList?.addEventListener("click", (event) => {
   const editButton = event.target.closest("[data-edit]");
   const deleteButton = event.target.closest("[data-delete]");
+  const statusButton = event.target.closest("[data-status-booking]");
+
+  if (statusButton) {
+    updateBookingStatus(statusButton.dataset.statusBooking, statusButton.dataset.bookingStatus);
+    return;
+  }
 
   if (editButton) {
     startEditBooking(editButton.dataset.edit);
@@ -3434,6 +3776,15 @@ bookingList?.addEventListener("click", (event) => {
   if (deleteButton) {
     deleteBooking(deleteButton.dataset.delete);
   }
+});
+
+[todayBookingList, upcomingBookingList].forEach((list) => {
+  list?.addEventListener("click", (event) => {
+    const editButton = event.target.closest("[data-edit]");
+    if (editButton) {
+      startEditBooking(editButton.dataset.edit);
+    }
+  });
 });
 
 instructorApprovalList?.addEventListener("click", (event) => {
@@ -3616,6 +3967,7 @@ viewButtons.forEach((button) => {
 async function initApp() {
   await loadAdminStateForCurrentUser();
   await loadSupabaseState();
+  applySchoolFromUrl();
   render();
 
   if (window.location.hash === "#student") {

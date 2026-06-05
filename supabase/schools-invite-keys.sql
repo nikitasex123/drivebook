@@ -58,6 +58,15 @@ as $$
   limit 1;
 $$;
 
+create or replace view public.school_directory as
+select
+  id,
+  name,
+  slug,
+  is_active
+from public.schools
+where is_active = true;
+
 alter table public.schools enable row level security;
 
 drop policy if exists "Admins can read schools" on public.schools;
@@ -94,5 +103,6 @@ before update on public.schools
 for each row execute function public.touch_updated_at();
 
 grant select, insert, update on public.schools to authenticated;
+grant select on public.school_directory to anon, authenticated;
 grant execute on function public.is_active_school(uuid) to anon, authenticated;
 grant execute on function public.get_school_by_invite_key(text) to anon, authenticated;
