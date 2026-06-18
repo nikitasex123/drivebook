@@ -196,6 +196,21 @@ function describeSyncError(error) {
   return error?.message || error?.details || "Проверьте подключение к интернету и настройки Supabase.";
 }
 
+function isSupabaseSchemaError(error) {
+  const code = String(error?.code ?? "");
+  const message = String(error?.message ?? error?.details ?? "").toLowerCase();
+
+  return (
+    code === "42P01"
+    || code === "42703"
+    || code === "PGRST204"
+    || code === "PGRST205"
+    || message.includes("does not exist")
+    || message.includes("schema cache")
+    || message.includes("column")
+  );
+}
+
 function showSyncIdleStatus() {
   syncUiState.pending = 0;
 
@@ -500,45 +515,55 @@ async function loadSupabaseState() {
     const localStudents = [...state.students];
     const localSchools = [...state.schools];
     const localBookings = [...state.bookings];
+    const shouldLoadStudents = state.isAdmin || Boolean(state.currentStudentId);
+    const shouldLoadPrivateBookings = state.isAdmin || Boolean(state.currentInstructorId) || Boolean(state.currentStudentId);
     const schoolsRequest = state.isAdmin
       ? supabaseClient.from("schools").select("*").order("created_at", { ascending: true })
       : supabaseClient.from("school_directory").select("*").order("name", { ascending: true });
+    const studentsRequest = shouldLoadStudents
+      ? supabaseClient.from("students").select("*").order("created_at", { ascending: true })
+      : Promise.resolve({ data: [], error: null });
+    const bookingsRequest = shouldLoadPrivateBookings
+      ? supabaseClient.from("bookings").select("*").order("lesson_date", { ascending: true }).order("lesson_time", { ascending: true })
+      : Promise.resolve({ data: [], error: null });
     const [schoolsResult, instructorsResult, studentsResult, bookingsResult, slotsResult, statusSchemaResult] = await Promise.all([
       schoolsRequest,
       supabaseClient.from("instructors").select("*").order("created_at", { ascending: true }),
-      supabaseClient.from("students").select("*").order("created_at", { ascending: true }),
-      supabaseClient.from("bookings").select("*").order("lesson_date", { ascending: true }).order("lesson_time", { ascending: true }),
+      studentsRequest,
+      bookingsRequest,
       supabaseClient.from("booked_slots").select("*"),
       supabaseClient.from("bookings").select("status").limit(1),
     ]);
 
     if (instructorsResult.error) throw instructorsResult.error;
-    if (bookingsResult.error) throw bookingsResult.error;
+    if (shouldLoadPrivateBookings && bookingsResult.error) throw bookingsResult.error;
 
-    state.studentsSchemaReady = !studentsResult.error;
+    state.studentsSchemaReady = !isSupabaseSchemaError(studentsResult.error);
     if (studentsResult.error) {
       console.warn("Supabase students table is not ready", studentsResult.error);
     }
 
-    state.schoolsSchemaReady = !schoolsResult.error;
+    state.schoolsSchemaReady = !isSupabaseSchemaError(schoolsResult.error);
     if (schoolsResult.error) {
       console.warn("Supabase schools table is not ready", schoolsResult.error);
     }
-    state.bookingStatusSchemaReady = !statusSchemaResult.error;
+    state.bookingStatusSchemaReady = !isSupabaseSchemaError(statusSchemaResult.error);
     if (statusSchemaResult.error) {
       console.warn("Supabase booking status column is not ready", statusSchemaResult.error);
     }
 
-    const remoteSchools = state.schoolsSchemaReady
+    const remoteSchools = state.schoolsSchemaReady && !schoolsResult.error
       ? schoolsResult.data.map(state.isAdmin ? mapSchoolFromRow : mapSchoolDirectoryFromRow).filter(Boolean)
       : localSchools;
     const remoteInstructors = instructorsResult.data.map(mapInstructorFromRow).filter(isVisibleInstructor);
-    const remoteStudents = state.studentsSchemaReady
+    const remoteStudents = state.studentsSchemaReady && shouldLoadStudents && !studentsResult.error
       ? studentsResult.data.map(mapStudentFromRow).filter(Boolean)
       : localStudents;
-    const remoteBookings = bookingsResult.data
-      .map(mapBookingFromRow)
-      .filter((booking) => !INTERNAL_TEST_INSTRUCTOR_IDS.has(booking.instructorId));
+    const remoteBookings = shouldLoadPrivateBookings
+      ? bookingsResult.data
+        .map(mapBookingFromRow)
+        .filter((booking) => !INTERNAL_TEST_INSTRUCTOR_IDS.has(booking.instructorId))
+      : [];
     const remoteSlots = slotsResult.error
       ? remoteBookings.map((booking) => ({
         id: booking.id,
@@ -553,7 +578,7 @@ async function loadSupabaseState() {
     const shouldSyncLocalInstructors = state.isAdmin && remoteInstructors.length === 0 && localInstructors.length > 0;
     const shouldSyncLocalStudents = state.isAdmin && state.studentsSchemaReady && remoteStudents.length === 0 && localStudents.length > 0;
     const shouldSyncLocalSchools = state.isAdmin && state.schoolsSchemaReady && remoteSchools.length === 0 && localSchools.length > 0;
-    const shouldSyncLocalBookings = state.isAdmin && remoteBookings.length === 0 && localBookings.length > 0;
+    const shouldSyncLocalBookings = state.isAdmin && shouldLoadPrivateBookings && remoteBookings.length === 0 && localBookings.length > 0;
 
     state.schools = shouldSyncLocalSchools ? localSchools : remoteSchools;
     state.instructors = shouldSyncLocalInstructors ? localInstructors : remoteInstructors;
@@ -3088,6 +3113,7 @@ async function handleStudentLogin(event) {
     return;
   }
 
+  setStudentSession(data.user.id);
   await loadSupabaseState();
 
   let student = getStudentById(data.user.id) || getStudentByEmail(email);
@@ -3098,6 +3124,7 @@ async function handleStudentLogin(event) {
       state.students.push(student);
       const isSaved = await saveStudents([student]);
       if (!isSaved) {
+        setStudentSession(null);
         showStudentLoginNote("Вход выполнен, но профиль ученика не сохранился. Попробуйте еще раз.", true);
         return;
       }
@@ -3105,6 +3132,7 @@ async function handleStudentLogin(event) {
   }
 
   if (!student) {
+    setStudentSession(null);
     showSyncIdleStatus();
     showStudentLoginNote("Это не ученический кабинет или профиль ученика не найден.", true);
     return;
@@ -3268,6 +3296,7 @@ async function handleLogin(event) {
       return;
     }
 
+    setInstructorSession(data.user.id);
     await loadSupabaseState();
 
     let authInstructor = getInstructorById(data.user.id) || getInstructorByEmail(authEmail) || instructor;
@@ -3281,6 +3310,7 @@ async function handleLogin(event) {
         state.instructors.push(authInstructor);
         const isSaved = await saveInstructors([authInstructor]);
         if (!isSaved) {
+          setInstructorSession(null);
           showLoginNote("Вход выполнен, но заявка инструктора не сохранилась. Попробуйте еще раз.", true);
           return;
         }
@@ -3288,6 +3318,7 @@ async function handleLogin(event) {
     }
 
     if (!authInstructor) {
+      setInstructorSession(null);
       showSyncIdleStatus();
       showLoginNote("Вход выполнен, но профиль инструктора не найден.", true);
       return;
