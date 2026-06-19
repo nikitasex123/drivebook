@@ -70,6 +70,7 @@
           <div class="settings-actions">
             <button class="primary-action" type="submit">Войти</button>
             <button id="showStudentRegister" type="button">Создать кабинет</button>
+            <button id="studentResetPassword" type="button">Забыли пароль?</button>
           </div>
           <p class="form-note muted-note">После входа данные ученика будут подставляться в запись автоматически.</p>
           <p class="form-note" id="studentLoginNote" role="status"></p>
@@ -218,6 +219,7 @@
           <div class="settings-actions">
             <button class="primary-action" type="submit">Войти</button>
             <button id="showRegister" type="button">Создать кабинет</button>
+            <button id="instructorResetPassword" type="button">Забыли пароль?</button>
           </div>
           <p class="form-note muted-note">Кабинет создается один раз, затем входите по своему логину и паролю.</p>
           <p class="form-note" id="loginNote" role="status"></p>
@@ -311,9 +313,43 @@
 
           <div class="settings-actions">
             <button class="primary-action" type="submit">Войти</button>
+            <button id="adminResetPassword" type="button">Забыли пароль?</button>
           </div>
           <p class="form-note muted-note">Доступ есть только у аккаунтов, добавленных в таблицу администраторов.</p>
           <p class="form-note" id="adminLoginNote" role="status"></p>
+        </form>
+      </section>
+
+      <section class="login-panel" id="passwordResetView" aria-labelledby="password-reset-title" hidden>
+        <div class="top-bar inline-bar">
+          <div>
+            <p class="eyebrow">Восстановление</p>
+            <strong>Новый пароль</strong>
+          </div>
+          <button class="secondary-action" type="button" data-back-home>Назад</button>
+        </div>
+
+        <form class="login-form" id="passwordResetForm">
+          <div>
+            <p class="eyebrow">Смена пароля</p>
+            <h1 id="password-reset-title">Задайте новый пароль</h1>
+          </div>
+
+          <label>
+            Новый пароль
+            <input id="newPassword" name="newPassword" autocomplete="new-password" type="password" minlength="8" required placeholder="Минимум 8 символов" />
+          </label>
+
+          <label>
+            Повторите пароль
+            <input id="newPasswordConfirm" name="newPasswordConfirm" autocomplete="new-password" type="password" minlength="8" required placeholder="Повторите пароль" />
+          </label>
+
+          <div class="settings-actions">
+            <button class="primary-action" type="submit">Сохранить пароль</button>
+          </div>
+          <p class="form-note muted-note">После сохранения пароля войдите в нужный кабинет заново.</p>
+          <p class="form-note" id="passwordResetNote" role="status"></p>
         </form>
       </section>
 

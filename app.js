@@ -14,6 +14,8 @@ const BOOKING_STATUSES = new Set(["new", "confirmed", "completed", "cancelled"])
 const DAY_COUNT = 7;
 const DRAWER_TRANSITION_MS = 300;
 const MIN_PASSWORD_LENGTH = 8;
+const INITIAL_LOCATION_HASH = window.location.hash;
+const INITIAL_LOCATION_SEARCH = window.location.search;
 const BLOCKED_EMAIL_DOMAINS = new Set([
   "example.com",
   "example.net",
@@ -82,6 +84,7 @@ const studentLoginForm = document.querySelector("#studentLoginForm");
 const studentRegisterForm = document.querySelector("#studentRegisterForm");
 const showStudentRegister = document.querySelector("#showStudentRegister");
 const showStudentLogin = document.querySelector("#showStudentLogin");
+const studentResetPassword = document.querySelector("#studentResetPassword");
 const studentLoginNote = document.querySelector("#studentLoginNote");
 const studentRegisterNote = document.querySelector("#studentRegisterNote");
 const instructorLoginView = document.querySelector("#instructorLoginView");
@@ -91,9 +94,14 @@ const adminLoginForm = document.querySelector("#adminLoginForm");
 const registerForm = document.querySelector("#registerForm");
 const showRegister = document.querySelector("#showRegister");
 const showLogin = document.querySelector("#showLogin");
+const instructorResetPassword = document.querySelector("#instructorResetPassword");
+const adminResetPassword = document.querySelector("#adminResetPassword");
 const loginNote = document.querySelector("#loginNote");
 const adminLoginNote = document.querySelector("#adminLoginNote");
 const registerNote = document.querySelector("#registerNote");
+const passwordResetView = document.querySelector("#passwordResetView");
+const passwordResetForm = document.querySelector("#passwordResetForm");
+const passwordResetNote = document.querySelector("#passwordResetNote");
 const instructorShell = document.querySelector("#instructorShell");
 const adminShell = document.querySelector("#adminShell");
 const currentInstructorName = document.querySelector("#currentInstructorName");
@@ -2270,6 +2278,9 @@ function showAppScreen(screen) {
   if (adminLoginView) {
     adminLoginView.hidden = screen !== "admin-login";
   }
+  if (passwordResetView) {
+    passwordResetView.hidden = screen !== "password-reset";
+  }
   if (instructorShell) {
     instructorShell.hidden = screen !== "instructor";
   }
@@ -2384,6 +2395,104 @@ function showAdminLogin() {
   showAppScreen("admin-login");
   showAdminLoginNote("");
   adminLoginForm?.adminEmail.focus();
+}
+
+function showPasswordResetScreen() {
+  const url = new URL(window.location.href);
+  url.hash = "password-reset";
+  window.history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
+  showAppScreen("password-reset");
+  showPasswordResetNote("");
+  passwordResetForm?.newPassword.focus();
+}
+
+function getPasswordResetRedirectUrl() {
+  const url = new URL(window.location.href);
+  url.hash = "";
+  url.search = "";
+  return url.href;
+}
+
+function isPasswordRecoveryUrl() {
+  const hashParams = new URLSearchParams((INITIAL_LOCATION_HASH || window.location.hash).replace(/^#/, ""));
+  const searchParams = new URLSearchParams(INITIAL_LOCATION_SEARCH || window.location.search);
+  const recoveryType = hashParams.get("type") || searchParams.get("type");
+
+  return recoveryType === "recovery";
+}
+
+async function requestPasswordReset(email, showMessage) {
+  if (!isSupabaseEnabled) {
+    showMessage("Для восстановления пароля нужен подключенный Supabase.", true);
+    return;
+  }
+
+  const normalizedEmail = normalizeEmail(email);
+  if (!isValidEmail(normalizedEmail)) {
+    showMessage("Введите email аккаунта, чтобы отправить ссылку восстановления.", true);
+    return;
+  }
+
+  startSyncStatus("Отправляем письмо");
+
+  const { error } = await supabaseClient.auth.resetPasswordForEmail(normalizedEmail, {
+    redirectTo: getPasswordResetRedirectUrl(),
+  });
+
+  if (error) {
+    showSyncIdleStatus();
+    showMessage(getAuthErrorMessage(error), true);
+    return;
+  }
+
+  finishSyncSuccess("Письмо отправлено");
+  showMessage("Письмо для смены пароля отправлено. Откройте ссылку из письма в этом браузере.");
+}
+
+async function handlePasswordReset(event) {
+  event.preventDefault();
+
+  if (!isSupabaseEnabled) {
+    showPasswordResetNote("Для смены пароля нужен подключенный Supabase.", true);
+    return;
+  }
+
+  const formData = new FormData(passwordResetForm);
+  const password = formData.get("newPassword").trim();
+  const confirmation = formData.get("newPasswordConfirm").trim();
+
+  if (password.length < MIN_PASSWORD_LENGTH) {
+    showPasswordResetNote(getPasswordErrorMessage(), true);
+    return;
+  }
+
+  if (password !== confirmation) {
+    showPasswordResetNote("Пароли не совпадают.", true);
+    return;
+  }
+
+  const { data: sessionData } = await supabaseClient.auth.getSession();
+  if (!sessionData.session) {
+    showPasswordResetNote("Ссылка восстановления устарела. Отправьте письмо восстановления еще раз.", true);
+    return;
+  }
+
+  startSyncStatus("Сохраняем пароль");
+
+  const { error } = await supabaseClient.auth.updateUser({ password });
+  if (error) {
+    showSyncIdleStatus();
+    showPasswordResetNote(getAuthErrorMessage(error), true);
+    return;
+  }
+
+  passwordResetForm.reset();
+  await supabaseClient.auth.signOut();
+  setStudentSession(null);
+  setInstructorSession(null);
+  setAdminSession(null);
+  finishSyncSuccess("Пароль обновлен");
+  showPasswordResetNote("Пароль обновлен. Теперь войдите заново через нужный кабинет.");
 }
 
 function showAdminDashboard() {
@@ -2501,6 +2610,12 @@ function showStudentRegisterNote(message, isError = false) {
   if (!studentRegisterNote) return;
   studentRegisterNote.textContent = message;
   studentRegisterNote.classList.toggle("error", isError);
+}
+
+function showPasswordResetNote(message, isError = false) {
+  if (!passwordResetNote) return;
+  passwordResetNote.textContent = message;
+  passwordResetNote.classList.toggle("error", isError);
 }
 
 function validatePhone(value) {
@@ -3716,11 +3831,23 @@ showStudentRegister?.addEventListener("click", showStudentRegisterMode);
 showStudentLogin?.addEventListener("click", showStudentLoginMode);
 showRegister?.addEventListener("click", showRegisterMode);
 showLogin?.addEventListener("click", showLoginMode);
+studentResetPassword?.addEventListener("click", () => {
+  requestPasswordReset(studentLoginForm?.studentLoginEmail.value, showStudentLoginNote);
+});
+instructorResetPassword?.addEventListener("click", () => {
+  const loginValue = loginForm?.loginName.value ?? "";
+  const instructor = getInstructorByLoginOrEmail(loginValue);
+  requestPasswordReset(instructor?.email || loginValue, showLoginNote);
+});
+adminResetPassword?.addEventListener("click", () => {
+  requestPasswordReset(adminLoginForm?.adminEmail.value, showAdminLoginNote);
+});
 studentLoginForm?.addEventListener("submit", handleStudentLogin);
 studentRegisterForm?.addEventListener("submit", handleStudentRegister);
 loginForm?.addEventListener("submit", handleLogin);
 adminLoginForm?.addEventListener("submit", handleAdminLogin);
 registerForm?.addEventListener("submit", handleRegister);
+passwordResetForm?.addEventListener("submit", handlePasswordReset);
 schoolForm?.addEventListener("submit", handleSchoolSubmit);
 logoutInstructor?.addEventListener("click", () => {
   setInstructorSession(null);
@@ -3996,12 +4123,16 @@ viewButtons.forEach((button) => {
 });
 
 async function initApp() {
+  const shouldShowPasswordReset = isPasswordRecoveryUrl();
+
   await loadAdminStateForCurrentUser();
   await loadSupabaseState();
   applySchoolFromUrl();
   render();
 
-  if (window.location.hash === "#student") {
+  if (shouldShowPasswordReset) {
+    showPasswordResetScreen();
+  } else if (window.location.hash === "#student") {
     openStudentFlow();
   } else if (window.location.hash === "#instructor") {
     openInstructorFlow();
