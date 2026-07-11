@@ -20,6 +20,8 @@ const DRAWER_TRANSITION_MS = 300;
 const MIN_PASSWORD_LENGTH = 8;
 const INITIAL_LOCATION_HASH = window.location.hash;
 const INITIAL_LOCATION_SEARCH = window.location.search;
+const PAGE_KIND = document.body?.dataset.page || "app";
+const IS_ADMIN_PAGE = PAGE_KIND === "admin";
 const BLOCKED_EMAIL_DOMAINS = new Set([
   "example.com",
   "example.net",
@@ -2574,6 +2576,11 @@ function showAppScreen(screen) {
 }
 
 function showRoleChoice() {
+  if (IS_ADMIN_PAGE) {
+    window.location.href = "index.html";
+    return;
+  }
+
   window.history.replaceState(null, "", "index.html");
   showAppScreen("role");
 }
@@ -2665,7 +2672,7 @@ function showInstructorLogin() {
 }
 
 function showAdminLogin() {
-  window.history.replaceState(null, "", "index.html#admin");
+  window.history.replaceState(null, "", `${IS_ADMIN_PAGE ? "admin.html" : "index.html"}#admin`);
   showAppScreen("admin-login");
   showAdminLoginNote("");
   adminLoginForm?.adminEmail.focus();
@@ -2770,7 +2777,7 @@ async function handlePasswordReset(event) {
 }
 
 function showAdminDashboard() {
-  window.history.replaceState(null, "", "index.html#admin");
+  window.history.replaceState(null, "", `${IS_ADMIN_PAGE ? "admin.html" : "index.html"}#admin`);
   showAppScreen("admin");
   render();
 }
@@ -4199,7 +4206,7 @@ logoutAdmin?.addEventListener("click", () => {
   if (isSupabaseEnabled) {
     supabaseClient.auth.signOut();
   }
-  showRoleChoice();
+  showAdminLogin();
 });
 
 studentInstructorFilter?.addEventListener("change", () => {
@@ -4495,6 +4502,10 @@ viewButtons.forEach((button) => {
 async function initApp() {
   const shouldShowPasswordReset = isPasswordRecoveryUrl();
 
+  if (IS_ADMIN_PAGE && !shouldShowPasswordReset) {
+    showAdminLogin();
+  }
+
   await loadAdminStateForCurrentUser();
   await loadSupabaseState();
   applySchoolFromUrl();
@@ -4502,6 +4513,8 @@ async function initApp() {
 
   if (shouldShowPasswordReset) {
     showPasswordResetScreen();
+  } else if (IS_ADMIN_PAGE) {
+    openAdminFlow();
   } else if (window.location.hash === "#student") {
     openStudentFlow();
   } else if (window.location.hash === "#instructor") {

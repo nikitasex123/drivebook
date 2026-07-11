@@ -45,6 +45,10 @@ python3 -m http.server 5173
 
 `http://localhost:5173/index.html`
 
+Админ-панель теперь открывается отдельно:
+
+`http://localhost:5173/admin.html`
+
 Чтобы войти как инструктор, сначала создайте кабинет через кнопку "Создать кабинет". После этого администратор должен одобрить заявку.
 
 ## Публикация сайта
@@ -63,7 +67,7 @@ python3 -m http.server 5173
 
 1. **Supabase -> Authentication -> URL Configuration**.
 2. **Site URL**: `https://nikitasex123.github.io/drivebook/`.
-3. **Redirect URLs**: добавьте `https://nikitasex123.github.io/drivebook/` и `https://nikitasex123.github.io/drivebook/index.html`.
+3. **Redirect URLs**: добавьте `https://nikitasex123.github.io/drivebook/`, `https://nikitasex123.github.io/drivebook/index.html` и `https://nikitasex123.github.io/drivebook/admin.html`.
 
 Это нужно, чтобы письма подтверждения регистрации ученика или инструктора возвращали пользователя на опубликованный сайт.
 
