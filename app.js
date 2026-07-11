@@ -8,9 +8,13 @@ const STUDENT_SESSION_KEY = "driveBookStudentSession";
 const ADMIN_SESSION_KEY = "driveBookAdminSession";
 const ANY_INSTRUCTOR_ID = "any";
 const ALL_SCHOOLS_ID = "all";
+const ALL_STATUSES_ID = "all";
+const ALL_PERIODS_ID = "all";
 const INTERNAL_TEST_INSTRUCTOR_IDS = new Set(["codex-test-instructor"]);
 const INSTRUCTOR_STATUSES = new Set(["pending", "approved", "blocked"]);
 const BOOKING_STATUSES = new Set(["new", "confirmed", "completed", "cancelled"]);
+const STUDENT_BOOKING_FILTERS = new Set(["upcoming", "history", "cancelled"]);
+const INSTRUCTOR_PERIOD_FILTERS = new Set(["all", "today", "upcoming", "past"]);
 const DAY_COUNT = 7;
 const DRAWER_TRANSITION_MS = 300;
 const MIN_PASSWORD_LENGTH = 8;
@@ -57,6 +61,10 @@ const state = {
   selectedSlot: null,
   selectedSchoolId: ALL_SCHOOLS_ID,
   selectedInstructorId: ANY_INSTRUCTOR_ID,
+  studentBookingsFilter: "upcoming",
+  instructorStatusFilter: ALL_STATUSES_ID,
+  instructorPeriodFilter: ALL_PERIODS_ID,
+  instructorSearchQuery: "",
   editingId: null,
   calendarStart: getStartOfWeek(new Date()),
   bookings: loadBookings(),
@@ -116,6 +124,7 @@ const studentFlowSteps = document.querySelector("#studentFlowSteps");
 const studentSchoolFilter = document.querySelector("#studentSchoolFilter");
 const studentInstructorFilter = document.querySelector("#studentInstructorFilter");
 const studentChoiceSummary = document.querySelector("#studentChoiceSummary");
+const studentBookingFilterButtons = document.querySelectorAll("[data-student-booking-filter]");
 const studentUpcomingBookings = document.querySelector("#studentUpcomingBookings");
 const dayTabs = document.querySelector("#dayTabs");
 const slotGrid = document.querySelector("#slotGrid");
@@ -133,6 +142,10 @@ const schoolList = document.querySelector("#schoolList");
 const instructorApprovalList = document.querySelector("#instructorApprovalList");
 const formNote = document.querySelector("#formNote");
 const adminNote = document.querySelector("#adminNote");
+const journalStatusFilter = document.querySelector("#journalStatusFilter");
+const journalPeriodFilter = document.querySelector("#journalPeriodFilter");
+const journalSearch = document.querySelector("#journalSearch");
+const journalFilterSummary = document.querySelector("#journalFilterSummary");
 const schoolNote = document.querySelector("#schoolNote");
 const approvalNote = document.querySelector("#approvalNote");
 const exportCsv = document.querySelector("#exportCsv");
@@ -768,6 +781,36 @@ async function createBookingInSupabase(booking) {
   }
 }
 
+async function updateBookingStatusInSupabase(booking, status) {
+  if (!isSupabaseEnabled) {
+    showSyncIdleStatus();
+    return true;
+  }
+
+  if (!state.bookingStatusSchemaReady) {
+    finishSyncError(null, "Обновите схему Supabase");
+    return false;
+  }
+
+  startSyncStatus("Обновляем статус");
+
+  const { error } = await supabaseClient
+    .from("bookings")
+    .update({
+      status,
+      updated_at: booking.updatedAt,
+    })
+    .eq("id", booking.id);
+
+  if (error) {
+    finishSyncError(error, "Не удалось обновить статус");
+    return false;
+  }
+
+  finishSyncSuccess("Статус обновлен");
+  return true;
+}
+
 async function deleteBookingFromSupabase(id) {
   if (!isSupabaseEnabled) {
     showSyncIdleStatus();
@@ -1000,6 +1043,14 @@ function isBookingCancelled(booking) {
 
 function isBookingActive(booking) {
   return !isBookingCancelled(booking);
+}
+
+function isBookingUpcoming(booking) {
+  return isBookingActive(booking) && getBookingStartsAt(booking) >= new Date();
+}
+
+function isBookingPast(booking) {
+  return getBookingStartsAt(booking) < new Date();
 }
 
 function normalizeInviteKey(value) {
@@ -1262,6 +1313,19 @@ function getNextBookingStatus(status) {
   return "confirmed";
 }
 
+function getStudentBookingFilterLabel(filter) {
+  if (filter === "history") return "истории";
+  if (filter === "cancelled") return "отменённых занятиях";
+  return "будущих занятиях";
+}
+
+function getInstructorPeriodFilterLabel(filter) {
+  if (filter === "today") return "сегодня";
+  if (filter === "upcoming") return "будущие";
+  if (filter === "past") return "прошедшие";
+  return "все даты";
+}
+
 function formatPhoneHref(value) {
   const normalized = normalizePhone(value);
   return normalized || String(value ?? "").replace(/[^\d+]/g, "");
@@ -1428,6 +1492,20 @@ function isSlotBooked(dateKey, time, instructorId, ignoredId = null) {
   ));
 
   return bookingMatches || slotMatches;
+}
+
+function updateBookedSlotState(booking) {
+  const instructorId = getBookingInstructorId(booking);
+  state.bookedSlots = state.bookedSlots.filter((slot) => slot.id !== booking.id);
+
+  if (isBookingActive(booking) && booking.date && booking.time && instructorId) {
+    state.bookedSlots.push({
+      id: booking.id,
+      date: booking.date,
+      time: booking.time,
+      instructorId,
+    });
+  }
 }
 
 function countInstructorBookings(instructorId, dateKey) {
@@ -1696,14 +1774,34 @@ function renderStudentChoiceSummary() {
 function renderStudentUpcomingBookings() {
   if (!studentUpcomingBookings) return;
 
+  const filter = STUDENT_BOOKING_FILTERS.has(state.studentBookingsFilter)
+    ? state.studentBookingsFilter
+    : "upcoming";
+
+  state.studentBookingsFilter = filter;
+  studentBookingFilterButtons.forEach((button) => {
+    button.classList.toggle("active", button.dataset.studentBookingFilter === filter);
+  });
+
   const bookings = getCurrentStudentBookings()
-    .filter(isBookingActive)
-    .filter((booking) => getBookingStartsAt(booking) >= new Date())
-    .sort((a, b) => getBookingStartsAt(a) - getBookingStartsAt(b))
-    .slice(0, 3);
+    .filter((booking) => {
+      if (filter === "cancelled") {
+        return isBookingCancelled(booking);
+      }
+
+      if (filter === "history") {
+        return isBookingActive(booking) && isBookingPast(booking);
+      }
+
+      return isBookingUpcoming(booking);
+    })
+    .sort((a, b) => {
+      const direction = filter === "history" ? -1 : 1;
+      return direction * (getBookingStartsAt(a) - getBookingStartsAt(b));
+    });
 
   if (bookings.length === 0) {
-    studentUpcomingBookings.innerHTML = `<p class="empty-state compact-empty">У вас пока нет будущих занятий.</p>`;
+    studentUpcomingBookings.innerHTML = `<p class="empty-state compact-empty">В ${getStudentBookingFilterLabel(filter)} пока пусто.</p>`;
     return;
   }
 
@@ -1712,8 +1810,12 @@ function renderStudentUpcomingBookings() {
       <div>
         <strong>${escapeHtml(formatSlot(booking.date, booking.time))}</strong>
         <span>${escapeHtml(getBookingInstructorName(booking))}</span>
+        <small>${escapeHtml(booking.phone)}${booking.email ? ` · ${escapeHtml(booking.email)}` : ""}</small>
       </div>
-      <span class="status-pill ${escapeHtml(booking.status)}">${escapeHtml(getBookingStatusLabel(booking.status))}</span>
+      <div class="student-booking-actions">
+        <span class="status-pill ${escapeHtml(booking.status)}">${escapeHtml(getBookingStatusLabel(booking.status))}</span>
+        ${isBookingUpcoming(booking) ? `<button class="danger-action" type="button" data-student-cancel-booking="${escapeHtml(booking.id)}">Отменить</button>` : ""}
+      </div>
     </article>
   `).join("");
 }
@@ -1821,11 +1923,66 @@ function renderSelectedSlot() {
 function renderBookings() {
   if (!bookingList) return;
 
-  const bookings = getCurrentInstructorBookings()
+  const allBookings = getCurrentInstructorBookings()
     .sort((a, b) => `${a.date} ${a.time}`.localeCompare(`${b.date} ${b.time}`));
+  const todayKey = toDateKey(new Date());
+  const query = state.instructorSearchQuery.trim().toLowerCase();
+  const bookings = allBookings.filter((booking) => {
+    if (state.instructorStatusFilter !== ALL_STATUSES_ID && normalizeBookingStatus(booking.status) !== state.instructorStatusFilter) {
+      return false;
+    }
+
+    if (state.instructorPeriodFilter === "today" && booking.date !== todayKey) {
+      return false;
+    }
+
+    if (state.instructorPeriodFilter === "upcoming" && !isBookingUpcoming(booking)) {
+      return false;
+    }
+
+    if (state.instructorPeriodFilter === "past" && !isBookingPast(booking)) {
+      return false;
+    }
+
+    if (!query) {
+      return true;
+    }
+
+    return [
+      booking.name,
+      booking.phone,
+      booking.email,
+      booking.comment,
+      getBookingInstructorName(booking),
+    ].some((value) => String(value ?? "").toLowerCase().includes(query));
+  });
+
+  if (journalStatusFilter) {
+    journalStatusFilter.value = state.instructorStatusFilter;
+  }
+
+  if (journalPeriodFilter) {
+    journalPeriodFilter.value = state.instructorPeriodFilter;
+  }
+
+  if (journalSearch && document.activeElement !== journalSearch) {
+    journalSearch.value = state.instructorSearchQuery;
+  }
+
+  if (journalFilterSummary) {
+    const statusLabel = state.instructorStatusFilter === ALL_STATUSES_ID
+      ? "все статусы"
+      : getBookingStatusLabel(state.instructorStatusFilter);
+    journalFilterSummary.textContent = `${bookings.length} из ${allBookings.length} · ${statusLabel} · ${getInstructorPeriodFilterLabel(state.instructorPeriodFilter)}`;
+  }
+
+  if (allBookings.length === 0) {
+    bookingList.innerHTML = `<p class="empty-state">Пока нет заявок. Здесь будут только ученики, записанные к вам.</p>`;
+    return;
+  }
 
   if (bookings.length === 0) {
-    bookingList.innerHTML = `<p class="empty-state">Пока нет заявок. Здесь будут только ученики, записанные к вам.</p>`;
+    bookingList.innerHTML = `<p class="empty-state">По выбранным фильтрам заявок нет.</p>`;
     return;
   }
 
@@ -2972,6 +3129,7 @@ async function handleSubmit(event) {
   }
 
   state.bookings.push(booking);
+  updateBookedSlotState(booking);
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state.bookings));
   bookingForm.reset();
   state.selectedSlot = null;
@@ -3128,6 +3286,7 @@ function updateBooking(event) {
     updatedAt: new Date().toISOString(),
   });
 
+  updateBookedSlotState(booking);
   saveBookings();
   state.editingId = null;
   showAdminNote("Заявка обновлена.");
@@ -3146,6 +3305,7 @@ async function updateBookingStatus(bookingId, nextStatus) {
 
   const normalizedStatus = normalizeBookingStatus(nextStatus);
   const previousStatus = booking.status;
+  const previousUpdatedAt = booking.updatedAt;
 
   if (isSupabaseEnabled && !state.bookingStatusSchemaReady) {
     showAdminNote("Нужно обновить SQL-схему Supabase: добавить статусы заявок.", true);
@@ -3156,6 +3316,7 @@ async function updateBookingStatus(bookingId, nextStatus) {
     status: normalizedStatus,
     updatedAt: new Date().toISOString(),
   });
+  updateBookedSlotState(booking);
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state.bookings));
   render();
 
@@ -3164,27 +3325,71 @@ async function updateBookingStatus(bookingId, nextStatus) {
     return;
   }
 
-  startSyncStatus("Обновляем статус");
+  const isSaved = await updateBookingStatusInSupabase(booking, normalizedStatus);
 
-  const { error } = await supabaseClient
-    .from("bookings")
-    .update({
-      status: normalizedStatus,
-      updated_at: booking.updatedAt,
-    })
-    .eq("id", booking.id);
-
-  if (error) {
+  if (!isSaved) {
     booking.status = previousStatus;
+    booking.updatedAt = previousUpdatedAt;
+    updateBookedSlotState(booking);
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state.bookings));
-    finishSyncError(error, "Не удалось обновить статус");
-    showAdminNote(describeSyncError(error), true);
+    showAdminNote("Не удалось обновить статус на сервере.", true);
     render();
     return;
   }
 
-  finishSyncSuccess("Статус обновлен");
   showAdminNote(`Статус изменен: ${getBookingStatusLabel(normalizedStatus)}.`);
+  render();
+}
+
+async function cancelStudentBooking(bookingId) {
+  const booking = state.bookings.find((item) => item.id === bookingId);
+  const currentStudent = getCurrentStudent();
+
+  if (!booking || !currentStudent || booking.studentId !== currentStudent.id) {
+    showNote("Эта запись не относится к вашему кабинету.", true);
+    return;
+  }
+
+  if (!isBookingUpcoming(booking)) {
+    showNote("Можно отменить только будущую активную запись.", true);
+    return;
+  }
+
+  const previousStatus = booking.status;
+  const previousUpdatedAt = booking.updatedAt;
+  Object.assign(booking, {
+    status: "cancelled",
+    updatedAt: new Date().toISOString(),
+  });
+  updateBookedSlotState(booking);
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(state.bookings));
+  render();
+
+  const isSaved = await updateBookingStatusInSupabase(booking, "cancelled");
+
+  if (!isSaved) {
+    booking.status = previousStatus;
+    booking.updatedAt = previousUpdatedAt;
+    updateBookedSlotState(booking);
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state.bookings));
+    showNote("Не удалось отменить запись на сервере. Попробуйте ещё раз.", true);
+    render();
+    return;
+  }
+
+  state.selectedSlot = null;
+  showNote("");
+  showBookingSuccess({
+    ...booking,
+    instructorName: getBookingInstructorName(booking),
+  });
+  if (bookingSuccess) {
+    bookingSuccess.innerHTML = `
+      <strong>Запись отменена.</strong>
+      <span>${escapeHtml(formatSlot(booking.date, booking.time))} · ${escapeHtml(getBookingInstructorName(booking))}</span>
+      <small>Это время снова станет доступно для записи.</small>
+    `;
+  }
   render();
 }
 
@@ -3198,6 +3403,7 @@ function deleteBooking(id) {
   }
 
   state.bookings = state.bookings.filter((item) => item.id !== id);
+  state.bookedSlots = state.bookedSlots.filter((slot) => slot.id !== id);
 
   if (state.editingId === id) {
     state.editingId = null;
@@ -4039,6 +4245,45 @@ slotGrid?.addEventListener("click", (event) => {
   hideBookingSuccess();
   render();
   openBookingDrawer();
+});
+
+studentBookingFilterButtons.forEach((button) => {
+  button.addEventListener("click", () => {
+    const filter = button.dataset.studentBookingFilter;
+    if (!STUDENT_BOOKING_FILTERS.has(filter)) return;
+
+    state.studentBookingsFilter = filter;
+    showNote("");
+    renderStudentUpcomingBookings();
+  });
+});
+
+studentUpcomingBookings?.addEventListener("click", (event) => {
+  const cancelButton = event.target.closest("[data-student-cancel-booking]");
+  if (!cancelButton) return;
+
+  cancelStudentBooking(cancelButton.dataset.studentCancelBooking);
+});
+
+journalStatusFilter?.addEventListener("change", () => {
+  const status = journalStatusFilter.value;
+  state.instructorStatusFilter = status === ALL_STATUSES_ID || BOOKING_STATUSES.has(status)
+    ? status
+    : ALL_STATUSES_ID;
+  renderBookings();
+});
+
+journalPeriodFilter?.addEventListener("change", () => {
+  const period = journalPeriodFilter.value;
+  state.instructorPeriodFilter = INSTRUCTOR_PERIOD_FILTERS.has(period)
+    ? period
+    : ALL_PERIODS_ID;
+  renderBookings();
+});
+
+journalSearch?.addEventListener("input", () => {
+  state.instructorSearchQuery = journalSearch.value;
+  renderBookings();
 });
 
 bookingList?.addEventListener("click", (event) => {

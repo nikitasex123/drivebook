@@ -166,8 +166,13 @@
               <div class="section-heading compact">
                 <div>
                   <p class="eyebrow">Личный кабинет</p>
-                  <h3 id="student-bookings-title">Мои ближайшие занятия</h3>
+                  <h3 id="student-bookings-title">Мои занятия</h3>
                 </div>
+              </div>
+              <div class="segmented-filter student-booking-filter" aria-label="Фильтр занятий ученика">
+                <button class="active" type="button" data-student-booking-filter="upcoming">Будущие</button>
+                <button type="button" data-student-booking-filter="history">История</button>
+                <button type="button" data-student-booking-filter="cancelled">Отменённые</button>
               </div>
               <div class="student-booking-list" id="studentUpcomingBookings"></div>
             </section>
@@ -460,6 +465,37 @@
               </div>
             </div>
             <div class="notification-list" id="notificationList"></div>
+          </section>
+
+          <section class="journal-filters" aria-labelledby="journal-filters-title">
+            <div>
+              <p class="eyebrow">Фильтры</p>
+              <h3 id="journal-filters-title">Журнал заявок</h3>
+            </div>
+            <label>
+              Статус
+              <select id="journalStatusFilter">
+                <option value="all">Все статусы</option>
+                <option value="new">Новые</option>
+                <option value="confirmed">Подтверждённые</option>
+                <option value="completed">Завершённые</option>
+                <option value="cancelled">Отменённые</option>
+              </select>
+            </label>
+            <label>
+              Период
+              <select id="journalPeriodFilter">
+                <option value="all">Все даты</option>
+                <option value="today">Сегодня</option>
+                <option value="upcoming">Будущие</option>
+                <option value="past">Прошедшие</option>
+              </select>
+            </label>
+            <label>
+              Поиск
+              <input id="journalSearch" type="search" autocomplete="off" placeholder="Имя, телефон или email" />
+            </label>
+            <div class="journal-filter-summary" id="journalFilterSummary"></div>
           </section>
 
           <div class="booking-list" id="bookingList"></div>

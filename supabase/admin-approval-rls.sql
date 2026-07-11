@@ -225,6 +225,7 @@ drop policy if exists "Users can update own student profile" on public.students;
 drop policy if exists "Users can read related bookings" on public.bookings;
 drop policy if exists "Students can create own bookings" on public.bookings;
 drop policy if exists "Instructors can update own bookings" on public.bookings;
+drop policy if exists "Students can update own bookings" on public.bookings;
 drop policy if exists "Instructors can delete own bookings" on public.bookings;
 
 create policy "Admins can read own admin row"
@@ -331,6 +332,15 @@ create policy "Instructors can update own bookings"
     or instructor_id = auth.uid()::text
   );
 
+create policy "Students can update own bookings"
+  on public.bookings for update
+  using (
+    student_id = auth.uid()::text
+  )
+  with check (
+    student_id = auth.uid()::text
+  );
+
 create policy "Instructors can delete own bookings"
   on public.bookings for delete
   using (
@@ -359,6 +369,7 @@ before update on public.bookings
 for each row execute function public.touch_updated_at();
 
 grant select, insert, update on public.schools to authenticated;
+grant select, insert, update, delete on public.bookings to authenticated;
 grant select on public.booked_slots to anon, authenticated;
 grant select on public.school_directory to anon, authenticated;
 grant execute on function public.is_drivebook_admin() to anon, authenticated;

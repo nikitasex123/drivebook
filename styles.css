@@ -715,6 +715,32 @@ textarea:focus {
   margin-bottom: 18px;
 }
 
+.segmented-filter {
+  display: inline-grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 4px;
+  width: min(100%, 430px);
+  margin-bottom: 14px;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.segmented-filter button {
+  min-height: 36px;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.9rem;
+  font-weight: 800;
+}
+
+.segmented-filter button.active {
+  background: var(--accent);
+  color: #fff;
+}
+
 .student-booking-list,
 .compact-booking-list {
   display: grid;
@@ -746,6 +772,26 @@ textarea:focus {
   color: var(--muted);
   font-size: 0.9rem;
   font-weight: 700;
+}
+
+.student-booking-card small {
+  display: block;
+  margin-top: 5px;
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.student-booking-actions {
+  display: grid;
+  justify-items: end;
+  gap: 8px;
+}
+
+.student-booking-actions button {
+  min-height: 36px;
+  border-radius: 8px;
+  padding: 0 12px;
+  font-weight: 800;
 }
 
 .success-banner {
@@ -1092,6 +1138,33 @@ textarea:focus {
   border-radius: 8px;
   padding: 14px;
   background: #fff;
+}
+
+.journal-filters {
+  display: grid;
+  grid-template-columns: minmax(150px, 0.8fr) minmax(150px, 0.75fr) minmax(150px, 0.75fr) minmax(220px, 1fr) minmax(150px, auto);
+  gap: 14px;
+  align-items: end;
+  margin-bottom: 18px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 16px;
+  background: var(--surface-strong);
+}
+
+.journal-filters h3 {
+  margin: 0;
+  font-size: 1.05rem;
+}
+
+.journal-filter-summary {
+  min-height: 46px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  color: var(--muted);
+  font-weight: 800;
+  text-align: right;
 }
 
 .booking-card.editing {
@@ -1535,8 +1608,14 @@ textarea:focus {
   .school-card,
   .instructor-dashboard-grid,
   .student-choice-summary,
+  .journal-filters,
   .moderation-card {
     grid-template-columns: 1fr;
+  }
+
+  .journal-filter-summary {
+    justify-content: flex-start;
+    text-align: left;
   }
 
   .role-actions {
@@ -1653,8 +1732,13 @@ textarea:focus {
 
   .student-choice-summary,
   .student-booking-card,
+  .student-booking-actions,
   .compact-booking-card {
     grid-template-columns: 1fr;
+  }
+
+  .student-booking-actions {
+    justify-items: start;
   }
 
   .calendar-grid {
