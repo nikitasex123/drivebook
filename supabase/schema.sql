@@ -71,6 +71,10 @@ create table if not exists public.bookings (
 create index if not exists bookings_instructor_date_idx
   on public.bookings (instructor_id, lesson_date, lesson_time);
 
+create unique index if not exists bookings_unique_active_slot_idx
+  on public.bookings (instructor_id, lesson_date, lesson_time)
+  where status <> 'cancelled';
+
 create index if not exists bookings_date_time_idx
   on public.bookings (lesson_date, lesson_time);
 

@@ -745,6 +745,29 @@ async function syncBookingsToSupabase() {
   }
 }
 
+async function createBookingInSupabase(booking) {
+  if (!isSupabaseEnabled) {
+    showSyncIdleStatus();
+    return true;
+  }
+
+  startSyncStatus("Создаем запись");
+
+  try {
+    const { error } = await supabaseClient
+      .from("bookings")
+      .insert(mapBookingToRow(booking));
+
+    if (error) throw error;
+    finishSyncSuccess("Запись создана");
+    return true;
+  } catch (error) {
+    console.error("Supabase booking create failed", error);
+    finishSyncError(error, "Не удалось создать запись");
+    return false;
+  }
+}
+
 async function deleteBookingFromSupabase(id) {
   if (!isSupabaseEnabled) {
     showSyncIdleStatus();
@@ -1332,6 +1355,12 @@ function getDays() {
   return days;
 }
 
+function getStudentCalendarDays() {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return Array.from({ length: DAY_COUNT }, (_, index) => addDays(today, index));
+}
+
 function timeToMinutes(time) {
   const [hours, minutes] = time.split(":").map(Number);
   return hours * 60 + minutes;
@@ -1458,6 +1487,90 @@ function getStudentSlotTimes(dateKey) {
   return [...slots].sort((a, b) => timeToMinutes(a) - timeToMinutes(b));
 }
 
+function getStudentScheduledTimes(dateKey) {
+  if (!dateKey) {
+    return [];
+  }
+
+  const slots = new Set();
+  getStudentInstructorCandidates().forEach((instructor) => {
+    if (!isInstructorWorkingOnDate(instructor, dateKey)) {
+      return;
+    }
+
+    getWorkHours(instructor.schedule).forEach((time) => slots.add(time));
+  });
+
+  return [...slots].sort((a, b) => timeToMinutes(a) - timeToMinutes(b));
+}
+
+function getStudentSlotInfo(dateKey, time) {
+  const availableInstructor = findAvailableInstructorForSlot(
+    dateKey,
+    time,
+    state.selectedInstructorId,
+    null,
+    { respectAdvance: true },
+  );
+
+  if (availableInstructor) {
+    return {
+      state: "available",
+      disabled: false,
+      instructor: availableInstructor,
+      label: `${availableInstructor.schedule.lessonDuration} минут`,
+    };
+  }
+
+  const availableWithoutAdvance = findAvailableInstructorForSlot(
+    dateKey,
+    time,
+    state.selectedInstructorId,
+    null,
+    { respectAdvance: false },
+  );
+
+  if (availableWithoutAdvance) {
+    return {
+      state: "closed",
+      disabled: true,
+      instructor: availableWithoutAdvance,
+      label: "слишком поздно",
+    };
+  }
+
+  return {
+    state: "booked",
+    disabled: true,
+    instructor: null,
+    label: "занято",
+  };
+}
+
+function getStudentDaySlots(dateKey) {
+  return getStudentScheduledTimes(dateKey).map((time) => ({
+    time,
+    ...getStudentSlotInfo(dateKey, time),
+  }));
+}
+
+function getStudentDayEmptyText(dateKey, slots) {
+  if (slots.length > 0) {
+    return "Свободных мест нет";
+  }
+
+  const candidates = getStudentInstructorCandidates();
+  const blockedDate = candidates
+    .map((instructor) => getBlockedDate(instructor.schedule, dateKey))
+    .find(Boolean);
+
+  if (blockedDate) {
+    return blockedDate.reason || "Инструктор недоступен";
+  }
+
+  return "Нет занятий";
+}
+
 function formatSlot(dateKey, time) {
   const date = getDateFromKey(dateKey);
   return `${fullDateFormatter.format(date)}, ${time}`;
@@ -1479,10 +1592,13 @@ function renderStudentFlowSteps() {
 
   const schoolReady = state.selectedSchoolId !== ALL_SCHOOLS_ID || getActiveSchools().length <= 1;
   const instructorReady = state.selectedInstructorId !== ANY_INSTRUCTOR_ID || getStudentVisibleInstructors().length > 0;
+  const hasSlots = getStudentCalendarDays().some((date) => (
+    getStudentDaySlots(toDateKey(date)).some((slot) => !slot.disabled)
+  ));
   const slotReady = Boolean(state.selectedSlot);
   const steps = [
     ["Автошкола", schoolReady],
-    ["Время", instructorReady && Boolean(state.activeDate)],
+    ["Время", instructorReady && (slotReady || hasSlots)],
     ["Данные", slotReady],
   ];
 
@@ -1605,37 +1721,13 @@ function renderStudentUpcomingBookings() {
 function renderDays() {
   if (!dayTabs) return;
 
-  const days = getDays();
-  const visibleDates = days.map(toDateKey);
-
-  if (days.length === 0) {
-    state.activeDate = null;
-    state.selectedSlot = null;
-    dayTabs.innerHTML = "";
-    return;
-  }
-
-  if (!visibleDates.includes(state.activeDate)) {
-    state.activeDate = toDateKey(days[0]);
-    state.selectedSlot = null;
-  }
-
-  dayTabs.innerHTML = days
-    .map((date) => {
-      const dateKey = toDateKey(date);
-      const isActive = dateKey === state.activeDate;
-      return `
-        <button class="day-tab ${isActive ? "active" : ""}" type="button" data-date="${dateKey}" role="tab" aria-selected="${isActive}">
-          <strong>${dateFormatter.format(date).replace(".", "")}</strong>
-          <span>${shortDateFormatter.format(date)}</span>
-        </button>
-      `;
-    })
-    .join("");
+  dayTabs.hidden = true;
+  dayTabs.innerHTML = "";
 }
 
 function renderSlots() {
   if (!slotGrid) return;
+  slotGrid.classList.add("week-schedule");
 
   if (getPublicInstructors().length === 0) {
     slotGrid.innerHTML = `<p class="empty-state">Пока нет одобренных инструкторов. Администратор должен подтвердить кабинет инструктора.</p>`;
@@ -1656,29 +1748,54 @@ function renderSlots() {
     return;
   }
 
-  const slots = getStudentSlotTimes(state.activeDate);
+  const weekDays = getStudentCalendarDays();
+  const weekSlots = weekDays.map((date) => {
+    const dateKey = toDateKey(date);
+    const slots = getStudentDaySlots(dateKey);
+    return {
+      date,
+      dateKey,
+      slots,
+      freeCount: slots.filter((slot) => !slot.disabled).length,
+    };
+  });
 
-  if (slots.length === 0) {
-    slotGrid.innerHTML = `<p class="empty-state">Для выбранного инструктора пока нет доступных дней и времени.</p>`;
+  if (weekSlots.every((day) => day.slots.length === 0)) {
+    slotGrid.innerHTML = `<p class="empty-state">На ближайшую неделю нет доступного расписания. Проверьте другого инструктора или автошколу.</p>`;
     return;
   }
 
-  slotGrid.innerHTML = slots.map((time) => {
-    const availableInstructor = findAvailableInstructorForSlot(state.activeDate, time);
-    const booked = !availableInstructor;
-    const selected = state.selectedSlot?.date === state.activeDate && state.selectedSlot?.time === time;
-    const duration = availableInstructor?.schedule.lessonDuration ?? selectedInstructor?.schedule.lessonDuration ?? DEFAULT_SETTINGS.lessonDuration;
+  slotGrid.innerHTML = weekSlots.map(({ date, dateKey, slots, freeCount }) => {
+    const emptyText = getStudentDayEmptyText(dateKey, slots);
     return `
-      <button
-        class="slot-button ${selected ? "selected" : ""}"
-        type="button"
-        data-time="${time}"
-        ${booked ? "disabled" : ""}
-        aria-pressed="${selected}"
-      >
-        <strong>${time}</strong>
-        <span>${booked ? "уже занято" : `${duration} минут`}</span>
-      </button>
+      <section class="student-week-day">
+        <div class="student-week-day-head">
+          <strong>${escapeHtml(dateFormatter.format(date).replace(".", ""))}</strong>
+          <span>${escapeHtml(shortDateFormatter.format(date))} · ${freeCount} ${getRussianPlural(freeCount, ["место", "места", "мест"])}</span>
+        </div>
+        <div class="student-week-slots">
+          ${slots.length ? slots.map((slot) => {
+            const selected = state.selectedSlot?.date === dateKey && state.selectedSlot?.time === slot.time;
+            const instructorHint = state.selectedInstructorId === ANY_INSTRUCTOR_ID && slot.instructor
+              ? getInstructorName(slot.instructor)
+              : slot.label;
+
+            return `
+              <button
+                class="slot-button week-slot-button ${escapeHtml(slot.state)} ${selected ? "selected" : ""}"
+                type="button"
+                data-date="${escapeHtml(dateKey)}"
+                data-time="${escapeHtml(slot.time)}"
+                ${slot.disabled ? "disabled" : ""}
+                aria-pressed="${selected}"
+              >
+                <strong>${escapeHtml(slot.time)}</strong>
+                <span>${escapeHtml(slot.disabled ? slot.label : instructorHint)}</span>
+              </button>
+            `;
+          }).join("") : `<p class="calendar-empty">${escapeHtml(emptyText)}</p>`}
+        </div>
+      </section>
     `;
   }).join("");
 }
@@ -2780,7 +2897,7 @@ function completeInstructorLogin(instructor) {
   return true;
 }
 
-function handleSubmit(event) {
+async function handleSubmit(event) {
   event.preventDefault();
 
   if (!state.selectedSlot) {
@@ -2846,8 +2963,16 @@ function handleSubmit(event) {
     createdAt: new Date().toISOString(),
   };
 
+  const isSaved = await createBookingInSupabase(booking);
+
+  if (!isSaved) {
+    showNote("Не удалось сохранить запись на сервере. Возможно, это время уже заняли. Выберите другой слот.", true);
+    render();
+    return;
+  }
+
   state.bookings.push(booking);
-  saveBookings();
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(state.bookings));
   bookingForm.reset();
   state.selectedSlot = null;
   closeBookingDrawer();
@@ -3906,7 +4031,7 @@ slotGrid?.addEventListener("click", (event) => {
   if (!button || button.disabled) return;
 
   state.selectedSlot = {
-    date: state.activeDate,
+    date: button.dataset.date || state.activeDate,
     time: button.dataset.time,
     requestedInstructorId: state.selectedInstructorId,
   };

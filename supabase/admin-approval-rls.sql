@@ -89,6 +89,10 @@ $$;
 create index if not exists bookings_student_idx
   on public.bookings (student_id, lesson_date, lesson_time);
 
+create unique index if not exists bookings_unique_active_slot_idx
+  on public.bookings (instructor_id, lesson_date, lesson_time)
+  where status <> 'cancelled';
+
 create index if not exists instructors_school_idx
   on public.instructors (school_id, status);
 

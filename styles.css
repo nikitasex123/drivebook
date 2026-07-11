@@ -482,6 +482,68 @@ button {
   color: #7f6a55;
 }
 
+.slot-grid.week-schedule {
+  grid-template-columns: repeat(7, minmax(150px, 1fr));
+  align-items: start;
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+
+.student-week-day {
+  min-width: 150px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-strong);
+  overflow: hidden;
+}
+
+.student-week-day-head {
+  min-height: 74px;
+  padding: 12px;
+  border-bottom: 1px solid var(--line);
+  background: #fff;
+}
+
+.student-week-day-head strong,
+.student-week-day-head span {
+  display: block;
+}
+
+.student-week-day-head strong {
+  line-height: 1.15;
+}
+
+.student-week-day-head span {
+  margin-top: 5px;
+  color: var(--muted);
+  font-size: 0.84rem;
+  font-weight: 800;
+}
+
+.student-week-slots {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+}
+
+.week-slot-button {
+  min-height: 68px;
+  padding: 10px;
+}
+
+.week-slot-button.available {
+  border-color: rgba(31, 122, 90, 0.22);
+}
+
+.week-slot-button.closed {
+  background: #f6f3ec;
+}
+
+.week-slot-button.booked {
+  border-color: #e5d7c7;
+  background: #f0ece5;
+}
+
 form {
   display: grid;
   gap: 14px;

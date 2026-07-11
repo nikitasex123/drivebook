@@ -16,6 +16,10 @@ begin
 end;
 $$;
 
+create unique index if not exists bookings_unique_active_slot_idx
+  on public.bookings (instructor_id, lesson_date, lesson_time)
+  where status <> 'cancelled';
+
 create or replace view public.booked_slots as
 select
   id,
