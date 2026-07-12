@@ -88,7 +88,6 @@ const syncStatusText = syncStatus?.querySelector(".sync-status__text");
 const roleView = document.querySelector("#roleView");
 const studentEntry = document.querySelector("#studentEntry");
 const instructorEntry = document.querySelector("#instructorEntry");
-const adminEntry = document.querySelector("#adminEntry");
 const studentLoginView = document.querySelector("#studentLoginView");
 const studentLoginForm = document.querySelector("#studentLoginForm");
 const studentRegisterForm = document.querySelector("#studentRegisterForm");
@@ -2011,8 +2010,8 @@ function renderBookings() {
             ${escapeHtml(getStatusActionLabel(booking.status))}
           </button>
           ${normalizeBookingStatus(booking.status) !== "cancelled" ? `<button class="danger-action" type="button" data-status-booking="${escapeHtml(booking.id)}" data-booking-status="cancelled">Отменить</button>` : ""}
-          <button type="button" data-edit="${booking.id}">Изменить</button>
-          <button class="danger-action" type="button" data-delete="${booking.id}">Удалить</button>
+          <button type="button" data-edit="${escapeHtml(booking.id)}">Изменить</button>
+          <button class="danger-action" type="button" data-delete="${escapeHtml(booking.id)}">Удалить</button>
         </div>
       </article>
     `)
@@ -3232,7 +3231,7 @@ function cancelEditBooking() {
   });
 }
 
-function updateBooking(event) {
+async function updateBooking(event) {
   event.preventDefault();
 
   const booking = state.bookings.find((item) => item.id === state.editingId);
@@ -3278,6 +3277,8 @@ function updateBooking(event) {
     return;
   }
 
+  const previousBooking = { ...booking };
+  const previousSlots = [...state.bookedSlots];
   const instructorName = getInstructorName(instructor);
   Object.assign(booking, {
     date,
@@ -3294,7 +3295,19 @@ function updateBooking(event) {
   });
 
   updateBookedSlotState(booking);
-  saveBookings();
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(state.bookings));
+  const isSaved = await saveBookings();
+
+  if (!isSaved) {
+    Object.assign(booking, previousBooking);
+    state.bookedSlots = previousSlots;
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state.bookings));
+    showEditNote("Не удалось сохранить изменения на сервере. Попробуйте ещё раз.", true);
+    render();
+    openDrawer(editDrawer, bookingEditForm?.editName);
+    return;
+  }
+
   state.editingId = null;
   showAdminNote("Заявка обновлена.");
   render();
@@ -3400,7 +3413,7 @@ async function cancelStudentBooking(bookingId) {
   render();
 }
 
-function deleteBooking(id) {
+async function deleteBooking(id) {
   const booking = state.bookings.find((item) => item.id === id);
   const currentInstructor = getCurrentInstructor();
 
@@ -3409,16 +3422,21 @@ function deleteBooking(id) {
     return;
   }
 
+  const isDeleted = await deleteBookingFromSupabase(id);
+  if (!isDeleted) {
+    showAdminNote("Не удалось удалить заявку на сервере. Попробуйте ещё раз.", true);
+    return;
+  }
+
   state.bookings = state.bookings.filter((item) => item.id !== id);
   state.bookedSlots = state.bookedSlots.filter((slot) => slot.id !== id);
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(state.bookings));
 
   if (state.editingId === id) {
     state.editingId = null;
     closeDrawer(editDrawer);
   }
 
-  saveBookings();
-  deleteBookingFromSupabase(id);
   showAdminNote("Заявка удалена.");
   render();
 }
@@ -3465,7 +3483,7 @@ function exportBookings() {
   URL.revokeObjectURL(link.href);
 }
 
-function handleSettingsSubmit(event) {
+async function handleSettingsSubmit(event) {
   event.preventDefault();
 
   const instructor = getCurrentInstructor();
@@ -3508,6 +3526,9 @@ function handleSettingsSubmit(event) {
     return;
   }
 
+  const previousSchedule = normalizeSettings(instructor.schedule);
+  const previousNotifications = normalizeNotifications(instructor.notifications);
+
   instructor.schedule = normalizeSettings({
     workDays,
     startTime,
@@ -3526,7 +3547,17 @@ function handleSettingsSubmit(event) {
   });
   state.activeDate = null;
   state.selectedSlot = null;
-  saveInstructors();
+  const isSaved = await saveInstructors([instructor]);
+
+  if (!isSaved) {
+    instructor.schedule = previousSchedule;
+    instructor.notifications = previousNotifications;
+    localStorage.setItem(INSTRUCTORS_KEY, JSON.stringify(state.instructors));
+    showSettingsNote("Не удалось сохранить расписание на сервере. Попробуйте ещё раз.", true);
+    render();
+    return;
+  }
+
   showSettingsNote("Расписание сохранено. Страница ученика обновится при открытии.");
   render();
 }
@@ -4163,7 +4194,6 @@ async function updateInstructorStatus(instructorId, status) {
 
 studentEntry?.addEventListener("click", openStudentFlow);
 instructorEntry?.addEventListener("click", openInstructorFlow);
-adminEntry?.addEventListener("click", openAdminFlow);
 backHomeButtons.forEach((button) => button.addEventListener("click", showRoleChoice));
 showStudentRegister?.addEventListener("click", showStudentRegisterMode);
 showStudentLogin?.addEventListener("click", showStudentLoginMode);
@@ -4392,7 +4422,7 @@ document.addEventListener("keydown", (event) => {
   }
 });
 exportCsv?.addEventListener("click", exportBookings);
-clearDemo?.addEventListener("click", () => {
+clearDemo?.addEventListener("click", async () => {
   const currentInstructor = getCurrentInstructor();
 
   if (!currentInstructor) {
@@ -4400,18 +4430,24 @@ clearDemo?.addEventListener("click", () => {
     return;
   }
 
+  const isDeleted = await deleteInstructorBookingsFromSupabase(currentInstructor.id);
+  if (!isDeleted) {
+    showAdminNote("Не удалось очистить журнал на сервере. Попробуйте ещё раз.", true);
+    return;
+  }
+
   state.bookings = state.bookings.filter((booking) => getBookingInstructorId(booking) !== currentInstructor.id);
+  state.bookedSlots = state.bookedSlots.filter((slot) => slot.instructorId !== currentInstructor.id);
   state.selectedSlot = null;
   state.editingId = null;
-  saveBookings();
-  deleteInstructorBookingsFromSupabase(currentInstructor.id);
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(state.bookings));
   showAdminNote("Журнал очищен.");
   render();
   closeDrawer(editDrawer);
 });
 
 settingsForm?.addEventListener("submit", handleSettingsSubmit);
-addBlockedDate?.addEventListener("click", () => {
+addBlockedDate?.addEventListener("click", async () => {
   const instructor = getCurrentInstructor();
 
   if (!instructor) {
@@ -4432,6 +4468,7 @@ addBlockedDate?.addEventListener("click", () => {
     return;
   }
 
+  const previousBlockedDates = [...instructor.schedule.blockedDates];
   instructor.schedule.blockedDates = normalizeBlockedDates([
     ...instructor.schedule.blockedDates,
     { id: createId("blocked"), date, reason },
@@ -4440,28 +4477,47 @@ addBlockedDate?.addEventListener("click", () => {
   settingsForm.blockedReason.value = "";
   state.activeDate = null;
   state.selectedSlot = null;
-  saveInstructors();
+  const isSaved = await saveInstructors([instructor]);
+
+  if (!isSaved) {
+    instructor.schedule.blockedDates = previousBlockedDates;
+    localStorage.setItem(INSTRUCTORS_KEY, JSON.stringify(state.instructors));
+    showSettingsNote("Не удалось закрыть дату на сервере. Попробуйте ещё раз.", true);
+    render();
+    return;
+  }
+
   showSettingsNote("Дата закрыта для записи.");
   render();
 });
 
-blockedDateList?.addEventListener("click", (event) => {
+blockedDateList?.addEventListener("click", async (event) => {
   const removeButton = event.target.closest("[data-remove-blocked]");
   if (!removeButton) return;
 
   const instructor = getCurrentInstructor();
   if (!instructor) return;
 
+  const previousBlockedDates = [...instructor.schedule.blockedDates];
   instructor.schedule.blockedDates = instructor.schedule.blockedDates
     .filter((item) => item.id !== removeButton.dataset.removeBlocked);
   state.activeDate = null;
   state.selectedSlot = null;
-  saveInstructors();
+  const isSaved = await saveInstructors([instructor]);
+
+  if (!isSaved) {
+    instructor.schedule.blockedDates = previousBlockedDates;
+    localStorage.setItem(INSTRUCTORS_KEY, JSON.stringify(state.instructors));
+    showSettingsNote("Не удалось удалить закрытую дату на сервере. Попробуйте ещё раз.", true);
+    render();
+    return;
+  }
+
   showSettingsNote("Дата снова доступна по рабочему расписанию.");
   render();
 });
 
-resetSettings?.addEventListener("click", () => {
+resetSettings?.addEventListener("click", async () => {
   const instructor = getCurrentInstructor();
 
   if (!instructor) {
@@ -4469,11 +4525,23 @@ resetSettings?.addEventListener("click", () => {
     return;
   }
 
+  const previousSchedule = normalizeSettings(instructor.schedule);
+  const previousNotifications = normalizeNotifications(instructor.notifications);
   instructor.schedule = { ...DEFAULT_SETTINGS };
   instructor.notifications = { ...DEFAULT_NOTIFICATIONS };
   state.activeDate = null;
   state.selectedSlot = null;
-  saveInstructors();
+  const isSaved = await saveInstructors([instructor]);
+
+  if (!isSaved) {
+    instructor.schedule = previousSchedule;
+    instructor.notifications = previousNotifications;
+    localStorage.setItem(INSTRUCTORS_KEY, JSON.stringify(state.instructors));
+    showSettingsNote("Не удалось сбросить настройки на сервере. Попробуйте ещё раз.", true);
+    render();
+    return;
+  }
+
   showSettingsNote("Настройки сброшены.");
   render();
 });
@@ -4520,7 +4588,7 @@ async function initApp() {
   } else if (window.location.hash === "#instructor") {
     openInstructorFlow();
   } else if (window.location.hash === "#admin") {
-    openAdminFlow();
+    window.location.replace("admin.html#admin");
   } else {
     showAppScreen("role");
   }
